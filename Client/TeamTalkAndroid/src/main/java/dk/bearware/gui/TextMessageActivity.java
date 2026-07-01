@@ -27,6 +27,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.inputmethod.InputMethodManager;
 import android.view.Menu;
@@ -58,15 +61,23 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
     public static final String EXTRA_USERID = "userid";
     
     TeamTalkConnection mConnection;
-    TeamTalkService ttservice;
     TextMessageAdapter adapter;
     AccessibilityAssistant accessibilityAssistant;
-    
+    private long lastTypingTime = 0;
+    private Handler typingHandler = new Handler();
+    private Runnable stopTypingRunnable = () -> sendTypingStatus(false);
+    private Runnable remoteTypingTimeoutRunnable = () -> updateTitle(false);
+    TeamTalkService getService() {
+        return mConnection.getService();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+        mConnection = new TeamTalkConnection(this);
         setContentView(R.layout.activity_text_message);
+        EdgeToEdgeHelper.enableEdgeToEdge(this);
+
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         accessibilityAssistant = new AccessibilityAssistant(this);
@@ -104,8 +115,6 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
         super.onStart();        
         
         // Bind to LocalService if not already
-        if (mConnection == null)
-            mConnection = new TeamTalkConnection(this);
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if(!bindService(intent, mConnection, Context.BIND_AUTO_CREATE))
@@ -119,7 +128,7 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
 
         // Unbind from the service
         if(mConnection.isBound()) {
-            onServiceDisconnected(ttservice);
+            onServiceDisconnected(getService());
             unbindService(mConnection);
             mConnection.setBound(false);
         }
@@ -127,8 +136,6 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
 
     @Override
     public void onServiceConnected(TeamTalkService service) {
-        ttservice = service;
-        
         final int userid = this.getIntent().getExtras().getInt(EXTRA_USERID);
         final TeamTalkBase ttclient = service.getTTInstance();
         adapter = new TextMessageAdapter(this.getBaseContext(), accessibilityAssistant,
@@ -147,7 +154,7 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
             if(newmsg.isEmpty())
                 return;
 
-            User myself = ttservice.getUsers().get(ttclient.getMyUserID());
+            User myself = service.getUsers().get(ttclient.getMyUserID());
             String name = Utils.getDisplayName(getBaseContext(), myself);
             MyTextMessage textmsg = new MyTextMessage(myself == null? "" : name);
             textmsg.nMsgType = TextMsgType.MSGTYPE_USER;
@@ -159,11 +166,14 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
             boolean sent = true;
             for (MyTextMessage m : textmsg.split()) {
                 sent = sent && ttclient.doTextMessage(m) > 0;
-                ttservice.getUserTextMsgs(userid).add(m);
+                service.getUserTextMsgs(userid).add(m);
             }
+            MyTextMessage.merge(service.getUserTextMsgs(userid));
             if (sent) {
                 send_msg.setText("");
                 adapter.notifyDataSetChanged();
+                typingHandler.removeCallbacks(stopTypingRunnable);
+                sendTypingStatus(false);
             }
             else {
                 Toast.makeText(TextMessageActivity.this,
@@ -173,7 +183,20 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
         });
         
         service.getEventHandler().registerOnCmdUserTextMessage(this, true);
-        
+
+        send_msg.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (System.currentTimeMillis() - lastTypingTime > 2000) {
+                    sendTypingStatus(true);
+                    lastTypingTime = System.currentTimeMillis();
+                }
+                typingHandler.removeCallbacks(stopTypingRunnable);
+                typingHandler.postDelayed(stopTypingRunnable, 7000);
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+
         updateTitle();
     }
 
@@ -183,24 +206,53 @@ extends AppCompatActivity implements TeamTalkConnectionListener, ClientEventList
     }
 
     void updateTitle() {
+        updateTitle(false);
+    }
+
+    void updateTitle(boolean isTyping) {
         String title = getResources().getString(R.string.title_activity_text_message);
         int userid = this.getIntent().getExtras().getInt(EXTRA_USERID);
-        
-        User user = ttservice.getUsers().get(userid);
+        typingHandler.removeCallbacks(remoteTypingTimeoutRunnable);
+        if (isTyping) {
+            typingHandler.postDelayed(remoteTypingTimeoutRunnable, 9000);
+        }
+        User user = getService().getUsers().get(userid);
         if(user != null) {
             String name = Utils.getDisplayName(getBaseContext(), user);
-            setTitle(title + " - " + name);
+            if (isTyping) {
+                setTitle(getString(R.string.text_user_typing_title, name));
+            } else {
+                setTitle(title + " - " + name);
+            }
         }
     }
 
     @Override
     public void onCmdUserTextMessage(TextMessage textmessage) {
         int userid = TextMessageActivity.this.getIntent().getExtras().getInt(EXTRA_USERID);
-        if(adapter != null && textmessage.nFromUserID == userid &&
-                textmessage.nMsgType == TextMsgType.MSGTYPE_USER) {
+        
+        if (textmessage.nFromUserID == userid && textmessage.nMsgType == TextMsgType.MSGTYPE_CUSTOM) {
+            if (textmessage.szMessage.startsWith("typing\r\n")) {
+                updateTitle(textmessage.szMessage.endsWith("1"));
+            }
+            return;
+        }
+
+        if(adapter != null && textmessage.nFromUserID == userid && textmessage.nMsgType == TextMsgType.MSGTYPE_USER) {
+            updateTitle(false);
             accessibilityAssistant.lockEvents();
             adapter.notifyDataSetChanged();
             accessibilityAssistant.unlockEvents();
         }
+    }
+
+    private void sendTypingStatus(boolean typing) {
+        TextMessage msg = new TextMessage();
+        msg.nMsgType = TextMsgType.MSGTYPE_CUSTOM;
+        msg.nToUserID = getIntent().getExtras().getInt(EXTRA_USERID);
+        msg.nChannelID = 0;
+        msg.nFromUserID = getService().getTTInstance().getMyUserID();
+        msg.szMessage = "typing\r\n" + (typing ? "1" : "0");
+        getService().getTTInstance().doTextMessage(msg);
     }
 }

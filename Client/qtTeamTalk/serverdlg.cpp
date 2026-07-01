@@ -26,7 +26,7 @@
 #include <QMessageBox>
 
 extern TTInstance* ttInst;
-extern QSettings* ttSettings;
+extern NonDefaultSettings* ttSettings;
 
 ServerDlg::ServerDlg(ServerDlgType type, const HostEntry& host, QWidget *parent)
     : QDialog(parent)
@@ -107,6 +107,9 @@ ServerDlg::ServerDlg(ServerDlgType type, const HostEntry& host, QWidget *parent)
     ui->lastChanChkBox->setChecked(m_hostentry.lastChan);
     ui->channelEdit->setText(m_hostentry.channel);
     ui->chanpasswdEdit->setText(m_hostentry.chanpasswd);
+    ui->joinCodeEdit->setText(host.joincode);
+    if (host.joincode.isEmpty())
+        ui->joincodeGroupBox->hide();
 }
 
 ServerDlg::~ServerDlg()

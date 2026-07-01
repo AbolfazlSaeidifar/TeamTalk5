@@ -1,4 +1,8 @@
-project (TeamTalk5Lib)
+project (TeamTalk5Lib LANGUAGES CXX)
+
+# Build Multi-threaded instead of Multi-Treaded DLL to avoid MSVC
+# dependency hell
+set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include (FeatureSummary)
 
@@ -7,8 +11,10 @@ set (TEAMTALKLIB_ROOT ${CMAKE_CURRENT_LIST_DIR})
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -D_DEBUG")
 set (CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG -D_DEBUG")
 
-# WebRTC makes use of std::optional which is C++17
-set (CMAKE_CXX_STANDARD 17)
+# WebRTC makes use of std::optional which is C++17.
+# Also ACE requires C++ 17.
+set (CMAKE_CXX_STANDARD 23)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   option (STATICCPP "Link static C and C++ libraries" ON)
@@ -17,8 +23,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   endif()
 endif()
 
-# Build Multi-threaded instead of Multi-Treaded DLL to avoid MSVC
-# dependency hell
 if (MSVC)
   set (COMPILE_FLAGS -DUNICODE -D_UNICODE
     -D_CRT_NONSTDC_NO_WARNINGS
@@ -27,18 +31,8 @@ if (MSVC)
     -D_CRT_NONSTDC_NO_DEPRECATE
     -D_WINSOCK_DEPRECATED_NO_WARNINGS)
 
-  foreach (flag_var
-      CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
-      CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
-      CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
-      CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
-    if (${flag_var} MATCHES "/MD")
-      STRING(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
-    endif()
-  endforeach(flag_var)
-
   # Use for building TeamTalk toolchain
-  set (PLATFORMTOOLSET "/property:PlatformToolset=v142")
+  set (PLATFORMTOOLSET "/property:PlatformToolset=v145")
 
 else()
   set (COMPILE_FLAGS -Wno-deprecated-declarations)
@@ -52,7 +46,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   endif()
 
   if (NOT CMAKE_OSX_ARCHITECTURES)
-    set (CMAKE_OSX_ARCHITECTURES arm64;x86_64)
     message(WARNING "No architecture specified. Defaulting to ${CMAKE_OSX_ARCHITECTURES}")
   endif()
 
@@ -75,6 +68,12 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Android")
     message(WARNING "No Android API level specified.")
   endif()
 
+endif()
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Android")
+  set (DLL_INSTALL_DIR Library/TeamTalk_DLL/${CMAKE_ANDROID_ARCH_ABI})
+else()
+  set (DLL_INSTALL_DIR Library/TeamTalk_DLL)
 endif()
 
 function(set_output_dir target dir)
@@ -111,10 +110,10 @@ if (MSVC)
   option (FEATURE_MEDIAFOUNDATION "Build TeamTalk DLL with Media Foundation Streaming support" ON)
   option (FEATURE_MSDMO "Build TeamTalk DLL with Microsoft DirectX Media Objects (DMO) Resampler support" ON)
   option (FEATURE_VIDCAP "Build TeamTalk DLL with DirectShow Video Capture support (obsolete)" OFF)
-  option (FEATURE_LAMEMP3 "Build TeamTalk DLL with MP3 Lame support (obsolete)" OFF)
-
+  option (FEATURE_FFMPEG "Build TeamTalk DLL with FFmpeg support" ON)
   add_feature_info (FEATURE_MEDIAFOUNDATION FEATURE_MEDIAFOUNDATION "Microsoft Media Foundation for A/V processing")
   add_feature_info (FEATURE_MSDMO FEATURE_MSDMO "Microsoft DirectX for audio resampling")
+  add_feature_info (FEATURE_FFMPEG FEATURE_FFMPEG "FFmpeg A/V library")
 else()
   option (FEATURE_FFMPEG "Build TeamTalk DLL with FFmpeg support" ON)
   add_feature_info (FEATURE_FFMPEG FEATURE_FFMPEG "FFmpeg A/V library")
@@ -171,6 +170,10 @@ if (BUILD_TEAMTALK_LIBRARY_DLL)
   target_link_libraries (TeamTalk5DLL PRIVATE ${TTCLIENTDLL_LINK_FLAGS} ${LINK_LIBS})
   set_target_properties (TeamTalk5DLL PROPERTIES OUTPUT_NAME TeamTalk5)
 
+  if (MSVC AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+    target_link_options (TeamTalk5DLL PRIVATE /NODEFAULTLIB:MSVCRT /NODEFAULTLIB:vcruntime.lib)
+  endif()
+
   if (${CMAKE_SYSTEM_NAME} MATCHES "Android")
     set_output_dir(TeamTalk5DLL ${TEAMTALK_ROOT}/Library/TeamTalk_DLL/${CMAKE_ANDROID_ARCH_ABI})
   elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
@@ -180,7 +183,7 @@ if (BUILD_TEAMTALK_LIBRARY_DLL)
   endif()
 
   install (FILES ${CMAKE_CURRENT_LIST_DIR}/../TeamTalk_DLL/TeamTalk.h DESTINATION Library/TeamTalk_DLL)
-  install (TARGETS TeamTalk5DLL DESTINATION Library/TeamTalk_DLL)
+  install (TARGETS TeamTalk5DLL DESTINATION ${DLL_INSTALL_DIR})
 
   if (MSVS_UNITTEST)
     set_target_properties (TeamTalk5DLL PROPERTIES LINK_FLAGS "/LIBPATH:$(VCInstallDir)UnitTest/lib")
@@ -217,7 +220,7 @@ if (BUILD_TEAMTALK_LIBRARY_LIB)
     set_output_dir(TeamTalk5Lib ${TEAMTALK_ROOT}/Library/TeamTalk_DLL)
   endif()
 
-  install (TARGETS TeamTalk5Lib DESTINATION Library/TeamTalk_DLL)
+  install (TARGETS TeamTalk5Lib DESTINATION ${DLL_INSTALL_DIR})
 
 endif()
 
@@ -247,6 +250,10 @@ if (BUILD_TEAMTALK_LIBRARY_DLLPRO)
 
   target_link_libraries (TeamTalk5ProDLL PRIVATE ${TTCLIENTPRODLL_LINK_FLAGS} ${LINK_LIBS})
 
+  if (MSVC AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+    target_link_options (TeamTalk5ProDLL PRIVATE /NODEFAULTLIB:MSVCRT /NODEFAULTLIB:vcruntime.lib)
+  endif()
+
   if (${CMAKE_SYSTEM_NAME} MATCHES "Android")
     set_output_dir(TeamTalk5ProDLL ${TEAMTALK_ROOT}/Library/TeamTalk_DLL/${CMAKE_ANDROID_ARCH_ABI})
   elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
@@ -256,7 +263,7 @@ if (BUILD_TEAMTALK_LIBRARY_DLLPRO)
   endif()
 
   install (FILES ${CMAKE_CURRENT_LIST_DIR}/../TeamTalk_DLL/TeamTalk.h ${CMAKE_CURRENT_LIST_DIR}/../TeamTalk_DLL/TeamTalkSrv.h DESTINATION Library/TeamTalk_DLL)
-  install (TARGETS TeamTalk5ProDLL DESTINATION Library/TeamTalk_DLL)
+  install (TARGETS TeamTalk5ProDLL DESTINATION ${DLL_INSTALL_DIR})
 
   set_target_properties (TeamTalk5ProDLL PROPERTIES OUTPUT_NAME TeamTalk5Pro)
 
@@ -300,7 +307,7 @@ if (BUILD_TEAMTALK_LIBRARY_LIBPRO)
     set_output_dir(TeamTalk5ProLib ${TEAMTALK_ROOT}/Library/TeamTalk_DLL)
   endif()
 
-  install (TARGETS TeamTalk5ProLib DESTINATION Library/TeamTalk_DLL)
+  install (TARGETS TeamTalk5ProLib DESTINATION ${DLL_INSTALL_DIR})
 
   set_target_properties (TeamTalk5ProLib PROPERTIES OUTPUT_NAME TeamTalk5Pro)
 
@@ -443,20 +450,24 @@ if (BUILD_TEAMTALK_LIBRARY_UNITTEST_CATCH2)
       ${TEAMTALKLIB_ROOT}/settings/Settings.h)
 
   if (TOOLCHAIN_CATCH2)
-    add_dependencies(catchtt catch2)
-    list (APPEND TTCLIENTPRODLL_INCLUDE_DIR ${CATCH_INCLUDE_DIR})
+    target_link_libraries (catchtt catch2main catch2)
   else()
-    # Assuming 'catch' package is installed
+    find_package(Catch2 3 REQUIRED)
+    target_link_libraries (catchtt Catch2::Catch2WithMain)
   endif()
 
   target_include_directories (catchtt PRIVATE
-    ${TTCLIENTPRODLL_INCLUDE_DIR} ${TINYXML_INCLUDE_DIR})
+    ${TTCLIENTPRODLL_INCLUDE_DIR})
 
   target_compile_options (catchtt PRIVATE
     ${TTCLIENTPRODLL_COMPILE_FLAGS} ${COMPILE_FLAGS})
 
   target_link_libraries (catchtt ${TTCLIENTPRODLL_LINK_FLAGS}
-    ${LINK_LIBS} ${CATCH_LINK_FLAGS} ${TINYXML_LINK_FLAGS})
+    ${LINK_LIBS} ${CATCH_LINK_FLAGS} ${TINYXML2_LINK_FLAGS})
+
+  if (MSVC AND ${CMAKE_SIZEOF_VOID_P} EQUAL 4)
+    target_link_options (catchtt PRIVATE /NODEFAULTLIB:MSVCRT /NODEFAULTLIB:vcruntime.lib)
+  endif()
 
   set_output_dir(catchtt ${TEAMTALK_ROOT}/Library/TeamTalkLib/test)
 

@@ -14,9 +14,9 @@
  * @brief Ensure the header and DLL are exactly the same version. To
  * get the version of the loaded DLL call TT_GetVersion(). A remote
  * client's version can be seen in the @a szVersion member of the
- * #User-struct. */
+ * #User struct. */
 
-#define TEAMTALK_VERSION "5.19.0.5167"
+#define TEAMTALK_VERSION "5.23.0.5201"
 
 
 #if defined(WIN32)
@@ -343,7 +343,7 @@ extern "C" {
         /** @brief Same as #SOUNDSYSTEM_AUDIOUNIT. */
         SOUNDSYSTEM_AUDIOUNIT_IOS = SOUNDSYSTEM_AUDIOUNIT,
         /** @brief PulseAudio API.
-         *  PulseAudio is typically used on Ubuntu 22. */
+         *  PulseAudio is typically used on Ubuntu and Raspberry Pi OS. */
         SOUNDSYSTEM_PULSEAUDIO = 10,
     } SoundSystem;
 
@@ -374,6 +374,14 @@ extern "C" {
          * @see TT_SetSoundDeviceEffects() */
         SOUNDDEVICEFEATURE_DENOISE          = 0x0004,
         /** @brief The #SoundDevice can position user in 3D.
+         *
+         * Note that 3D sound requires an #AudioCodec that is configured in
+         * mono and #SoundDevice is not running in duplex mode,
+         * @see SOUNDDEVICEFEATURE_DUPLEXMODE.
+         *
+         * @deprecated This feature was previously supported
+         * by #SOUNDSYSTEM_DSOUND but is no longer available.
+         *
          * @see TT_SetUserPosition()  */
         SOUNDDEVICEFEATURE_3DPOSITION       = 0x0008,
         /** @brief The #SoundDevice can run in duplex mode.
@@ -420,15 +428,7 @@ extern "C" {
         /** 
          * @brief A Windows specific ID to the sound device.
          *
-         * For DirectSound and WinMM this is the ID of the device used 
-         * in Win32's waveInGetDevCaps and waveOutGetDevCaps.
-         * Value will be -1 if no ID could be found This ID can also
-         * be used to find the corresponding mixer on Windows passing
-         * it as @a nWaveDeviceID.  Note that this ID applies both to
-         * DirectSound and WinMM.
-         *
-         * For WASAPI this ID is the index of 
-         * IMMDeviceEnumerator::EnumAudioEndpoints()
+         * @deprecated This value is always -1
          *
          * @see TT_Mixer_GetWaveInName
          * @see TT_Mixer_GetWaveOutName
@@ -930,7 +930,8 @@ extern "C" {
      * @{ */
 
     /**
-     * @brief The bitmap format used for a #DesktopWindow. */
+     * @brief The bitmap format used for a #DesktopWindow.
+     * A desktop window for transmission must be less than 16 MBytes. */
     typedef enum BitmapFormat
     {
         /** @brief Used to denote nothing selected. */
@@ -942,7 +943,7 @@ extern "C" {
          * 8-bit bitmap is 4095 blocks of 120 by 34 pixels. */
         BMP_RGB8_PALETTE    = 1,
         /** @brief The bitmap is a 16-bit colored bitmap. The maximum
-         * pixels. */
+         * size of a 16-bit bitmap is 4095 blocks of 102 x 20 pixels. */
         BMP_RGB16_555       = 2,
         /** @brief The bitmap is a 24-bit colored bitmap. The maximum
          * size of a 24-bit bitmap is 4095 blocks of 85 by 16
@@ -973,9 +974,9 @@ extern "C" {
      * TT_SendDesktopWindow(). */
     typedef struct DesktopWindow
     {
-        /** @brief The width in pixels of the bitmap. */
+        /** @brief The width in pixels of the bitmap. See limits in #BitmapFormat. */
         INT32 nWidth;
-        /** @brief The height in pixels of the bitmap. */
+        /** @brief The height in pixels of the bitmap. See limits in #BitmapFormat. */
         INT32 nHeight;
         /** @brief The format of the bitmap. */
         BitmapFormat bmpFormat;
@@ -994,7 +995,7 @@ extern "C" {
         /** @brief A buffer pointing to the bitmap data (often refered to as Scan0). */
         VOID* frameBuffer;
         /** @brief The size in bytes of the buffer allocate in @a
-         * frameBuffer. Typically @c nBytesPerLine * @c nHeight. */
+         * frameBuffer. Typically @c nBytesPerLine * @c nHeight. See limits in #BitmapFormat. */
         INT32 nFrameBufferSize;
     } DesktopWindow;
 
@@ -1071,8 +1072,7 @@ extern "C" {
          * this interval. In most cases this makes less than 40 msec
          * transmission interval unfeasible. */
         INT32 nTxIntervalMSec;
-        /** @brief Playback should be done in stereo. Doing so will
-         * disable 3d-positioning.
+        /** @brief Playback should be done in stereo.
          *
          * @see TT_SetUserPosition()
          * @see TT_SetUserStereo() */
@@ -1117,8 +1117,7 @@ extern "C" {
          * this interval. In most cases this makes less than 40 msec
          * transmission interval unfeasible. */
         INT32 nTxIntervalMSec;
-        /** @brief Playback should be done in stereo. Doing so will
-         * disable 3d-positioning.
+        /** @brief Playback should be done in stereo.
          *
          * @see TT_SetUserPosition()
          * @see TT_SetUserStereo() */
@@ -1758,6 +1757,10 @@ extern "C" {
         SERVERLOGEVENT_SERVER_UPDATED              = 0x00800000,
         /** @brief User saved server's configuration is logged to file by the server. */
         SERVERLOGEVENT_SERVER_SAVECONFIG           = 0x01000000,
+        /** @brief User caused encryption error. */
+        SERVERLOGEVENT_USER_CRYPTERROR             = 0x02000000,
+        /** @brief User started new stream. */
+        SERVERLOGEVENT_USER_NEW_STREAM             = 0x04000000,
     } ServerLogEvent;
 
     /** @brief Bitmask of #ServerLogEvent.
@@ -2280,14 +2283,16 @@ extern "C" {
          * considered playing audio of a media file.
          * @see TT_SetUserStoppedTalkingDelay */
         INT32 nStoppedDelayMediaFile;
-        /** @brief User's position when using 3D-sound (DirectSound option).
+        /** @brief User's position when using 3D-sound.
          * Index 0 is x-axis, index 1 is y-axis and index 2 is Z-axis.
          * @see TT_SetUserPosition()
+         * @see SOUNDDEVICEFEATURE_3DPOSITION.
          * @see SoundDevice */
         float soundPositionVoice[3];
-        /** @brief User's position when using 3D-sound (DirectSound option).
+        /** @brief User's position when using 3D-sound.
          * Index 0 is x-axis, index 1 is y-axis and index 2 is Z-axis.
          * @see TT_SetUserPosition()
+         * @see SOUNDDEVICEFEATURE_3DPOSITION.
          * @see SoundDevice */
         float soundPositionMediaFile[3];
         /** @brief Check what speaker a user is outputting to. 
@@ -2944,7 +2949,7 @@ extern "C" {
          * 
          * The password specified in #TT_DoChannelOpEx is not correct.
          * The operator password is the @a szOpPassword of the 
-         * #Channel-struct. */
+         * #Channel struct. */
         CMDERR_INCORRECT_OP_PASSWORD = 2010,
 
         /** @brief The selected #AudioCodec exceeds what the server allows.
@@ -4093,7 +4098,8 @@ extern "C" {
         CLIENT_SNDOUTPUT_MUTE           = 0x00000020,
         /** @brief If set the client instance will auto position users
         * in a 180 degree circle using 3D-sound. This option is only
-        * available with #SOUNDSYSTEM_DSOUND.
+        * available with a #SoundDevice that supports
+        * #SOUNDDEVICEFEATURE_3DPOSITION.
         * @see TT_SetUserPosition()
         * @see TT_Enable3DSoundPositioning */
         CLIENT_SNDOUTPUT_AUTO3DPOSITION = 0x00000040,
@@ -4644,7 +4650,7 @@ extern "C" {
      *
      * Some devices, like Android, enable the user to toggle certain
      * audio effects on their device to improve audio quality. The
-     * #SoundDeviceEffects-struct can be used to toggle these audio
+     * #SoundDeviceEffects struct can be used to toggle these audio
      * effects on the device.
      *
      * The following sound systems support TT_SetSoundDeviceEffects():
@@ -4833,9 +4839,6 @@ extern "C" {
      *
      * 3D sound position requires #SOUNDDEVICEFEATURE_3DPOSITION.
      *
-     * Note that 3d-sound does not work if sound is running in duplex
-     * mode (#CLIENT_SNDINOUTPUT_DUPLEX) or in stereo.
-     *
      * @param lpTTInstance Pointer to client instance created by
      * #TT_InitTeamTalk.
      * @param bEnable TRUE to enable, otherwise FALSE.
@@ -4847,9 +4850,6 @@ extern "C" {
      * @brief Automatically position users using 3D-sound.
      *
      * 3D sound position requires #SOUNDDEVICEFEATURE_3DPOSITION.
-     *
-     * Note that 3d-sound does not work if sound is running in duplex
-     * mode (#CLIENT_SNDINOUTPUT_DUPLEX) or in stereo.
      *
      * @param lpTTInstance Pointer to client instance created by
      * #TT_InitTeamTalk.
@@ -4964,7 +4964,7 @@ extern "C" {
 
     /**
      * @brief Transmit application provided raw audio in
-     * #AudioBlock-structs as #STREAMTYPE_VOICE, i.e. microphone
+     * #AudioBlock structs as #STREAMTYPE_VOICE, i.e. microphone
      * input.
      *
      * Since #STREAMTYPE_VOICE is being replaced by audio input this
@@ -7467,10 +7467,6 @@ extern "C" {
      *
      * 3D sound position requires #SOUNDDEVICEFEATURE_3DPOSITION.
      *
-     * This can only be done using DirectSound (#SOUNDSYSTEM_DSOUND),
-     * a mono channel and with sound duplex mode 
-     * (#CLIENT_SNDINOUTPUT_DUPLEX) disabled.
-     *
      * @param lpTTInstance Pointer to client instance created by
      * #TT_InitTeamTalk.
      * @param nUserID ID of user.
@@ -7638,7 +7634,7 @@ extern "C" {
     /** 
      * @brief Release the shared memory of an #AudioBlock.
      *
-     * All #AudioBlock-structures extracted through
+     * All #AudioBlock structures extracted through
      * TT_AcquireUserAudioBlock() must be released again since they
      * share memory with the local client instance.
      *

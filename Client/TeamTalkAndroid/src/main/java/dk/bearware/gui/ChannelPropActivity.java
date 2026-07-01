@@ -64,9 +64,15 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
                             REQUEST_AUDIOCONFIG = 2;
     
     TeamTalkConnection mConnection;
-    TeamTalkService ttservice;
-    TeamTalkBase ttclient;
     Channel channel;
+
+    TeamTalkService getService() {
+        return mConnection.getService();
+    }
+
+    TeamTalkBase getClient() {
+        return getService().getTTInstance();
+    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -82,7 +88,10 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mConnection = new TeamTalkConnection(this);
         setContentView(R.layout.activity_channel_prop);
+        EdgeToEdgeHelper.enableEdgeToEdge(this);
+
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);        
     }
 
@@ -101,37 +110,33 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch(item.getItemId()) {
-            case R.id.action_updatechannel : {
+        int id = item.getItemId();
+        if (id == R.id.action_updatechannel) {
+            exchangeChannel(true);
+            if(channel.nChannelID > 0) {
+
+                updateCmdId = getClient().doUpdateChannel(channel);
+                if(updateCmdId < 0) {
+                    Toast.makeText(this, getResources().getString(R.string.text_con_cmderr),
+                                   Toast.LENGTH_LONG).show();
+                }
+            }
+            else {
                 exchangeChannel(true);
-                if(channel.nChannelID > 0) {
-                    
-                    updateCmdId = ttclient.doUpdateChannel(channel);
-                    if(updateCmdId < 0) {
-                        Toast.makeText(this, getResources().getString(R.string.text_con_cmderr),
-                                       Toast.LENGTH_LONG).show();
-                    }
-                }
+
+                updateCmdId = getClient().doJoinChannel(channel);
+                if(updateCmdId > 0)
+                    getService().setJoinChannel(channel);
                 else {
-                    exchangeChannel(true);
-                    
-                    updateCmdId = ttclient.doJoinChannel(channel);
-                    if(updateCmdId > 0)
-                        ttservice.setJoinChannel(channel);
-                    else {
-                        Toast.makeText(this, getResources().getString(R.string.text_con_cmderr),
-                                       Toast.LENGTH_LONG).show();
-                    }
+                    Toast.makeText(this, getResources().getString(R.string.text_con_cmderr),
+                                   Toast.LENGTH_LONG).show();
                 }
             }
-            break;
-            case android.R.id.home : {
-                setResult(RESULT_CANCELED);
-                finish();
-            }
-            break;
-            default :
-                return super.onOptionsItemSelected(item);
+        } else if (id == android.R.id.home) {
+            setResult(RESULT_CANCELED);
+            finish();
+        } else {
+            return super.onOptionsItemSelected(item);
         }
         return true;
     }
@@ -146,8 +151,6 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
         super.onStart();
         
         // Bind to LocalService if not already
-        if (mConnection == null)
-            mConnection = new TeamTalkConnection(this);
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if(!bindService(intent, mConnection, Context.BIND_AUTO_CREATE))
@@ -161,7 +164,7 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
 
         // Unbind from the service
         if(mConnection.isBound()) {
-            onServiceDisconnected(ttservice);
+            onServiceDisconnected(getService());
             unbindService(mConnection);
             mConnection.setBound(false);
         }
@@ -250,9 +253,6 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
 
     @Override
     public void onServiceConnected(TeamTalkService service) {
-        ttservice = service;
-        ttclient = ttservice.getTTInstance();
-
         service.getEventHandler().registerOnCmdError(this, true);
         service.getEventHandler().registerOnCmdSuccess(this, true);
 
@@ -261,7 +261,7 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
             int parentid = getIntent().getExtras().getInt(EXTRA_PARENTID);
             if(channelid > 0) {
                 //existing channel
-                channel = ttservice.getChannels().get(channelid);
+                channel = service.getChannels().get(channelid);
                 if (channel == null) {
                     setResult(RESULT_CANCELED);
                     finish();
@@ -273,7 +273,7 @@ implements TeamTalkConnectionListener, ClientEventListener.OnCmdErrorListener, C
                 channel = new Channel(true, true);
                 channel.nParentID = parentid;
                 ServerProperties prop = new ServerProperties();
-                if(ttservice.getTTInstance().getServerProperties(prop)) {
+                if (service.getTTInstance().getServerProperties(prop)) {
                     channel.nMaxUsers = prop.nMaxUsers;
                 }
             }

@@ -43,7 +43,7 @@
 #endif
 
 extern TTInstance* ttInst;
-extern QSettings* ttSettings;
+extern NonDefaultSettings* ttSettings;
 extern QTranslator* ttTranslator;
 
 void migrateSettings()
@@ -68,7 +68,7 @@ void migrateSettings()
 #endif
         {
             Gender gender = ttSettings->value(SETTINGS_GENERAL_GENDER).toBool() ? GENDER_MALE : GENDER_FEMALE;
-            ttSettings->setValue(SETTINGS_GENERAL_GENDER, gender);
+            ttSettings->setValueOrClear(SETTINGS_GENERAL_GENDER, gender, SETTINGS_GENERAL_GENDER_DEFAULT);
         }
     }
     if (!versionSameOrLater(iniversion, "5.3"))
@@ -103,7 +103,7 @@ void migrateSettings()
                 activeEvents |= event;
         }
 
-        ttSettings->setValue(SETTINGS_SOUNDEVENT_ACTIVEEVENTS, activeEvents);
+        ttSettings->setValueOrClear(SETTINGS_SOUNDEVENT_ACTIVEEVENTS, activeEvents, SETTINGS_SOUNDEVENT_ACTIVEEVENTS_DEFAULT);
 
         // TTS options removed in 5.4 format
         ttSettings->remove("texttospeech/announce-server-name");
@@ -142,7 +142,7 @@ void migrateSettings()
             else if (lang == "Thai") lc_code = "th";
             else if (lang == "Turkish") lc_code = "tr";
             else if (lang == "Vietnamese") lc_code = "vi";
-            ttSettings->setValue(SETTINGS_DISPLAY_LANGUAGE, lc_code);
+            ttSettings->setValueOrClear(SETTINGS_DISPLAY_LANGUAGE, lc_code, SETTINGS_DISPLAY_LANGUAGE_DEFAULT);
         }
 
         // Shortcuts changed in 5.4 format
@@ -158,28 +158,34 @@ void migrateSettings()
             }
         }
 
-        ttSettings->setValue(SETTINGS_SHORTCUTS_ACTIVEHKS, hks);
+        ttSettings->setValueOrClear(SETTINGS_SHORTCUTS_ACTIVEHKS, hks, SETTINGS_SHORTCUTS_ACTIVEHKS_DEFAULT);
         ttSettings->remove("general_/push-to-talk");
     }
     if (!versionSameOrLater(iniversion, "5.5"))
     {
         // Setting to display emoji in channel list changed in 5.5 format
         if (ttSettings->contains("display/show-emoji") && ttSettings->value("display/show-emoji").toBool() == false)
-            ttSettings->setValue(SETTINGS_DISPLAY_INFOSTYLE, STYLE_NONE);
+            ttSettings->setValueOrClear(SETTINGS_DISPLAY_INFOSTYLE, STYLE_NONE, SETTINGS_DISPLAY_INFOSTYLE_DEFAULT);
         ttSettings->remove("display/show-emoji");
 
         // TTSENGINE_NOTIFY removed in 5.5 format
 #if defined(Q_OS_LINUX)
         if (ttSettings->value(SETTINGS_TTS_ENGINE).toUInt() == TTSENGINE_NOTIFY_OBSOLETE)
         {
-            ttSettings->setValue(SETTINGS_TTS_ENGINE, TTSENGINE_NONE);
-            ttSettings->setValue(SETTINGS_TTS_TOAST, true);
+            ttSettings->setValueOrClear(SETTINGS_TTS_ENGINE, TTSENGINE_NONE, SETTINGS_TTS_ENGINE_DEFAULT);
+            ttSettings->setValueOrClear(SETTINGS_TTS_TOAST, true, SETTINGS_TTS_TOAST_DEFAULT);
             ttSettings->remove("texttospeech/tts-timestamp");
         }
 #endif
 
         // msgtimestamp removed in 5.5 format
         ttSettings->remove("display/msgtimestamp");
+    }
+    if (!versionSameOrLater(iniversion, "5.6"))
+    {
+        // Check and fix status message value
+        if (ttSettings->value(SETTINGS_GENERAL_STATUSMESSAGE).toString() == ttSettings->value(SETTINGS_GENERAL_STATUSMESSAGE, SETTINGS_GENERAL_STATUSMESSAGE).toString())
+            ttSettings->remove(SETTINGS_GENERAL_STATUSMESSAGE);
     }
 
     if (ttSettings->value(SETTINGS_GENERAL_VERSION).toString() != SETTINGS_VERSION)
@@ -334,8 +340,6 @@ QString limitText(const QString& text)
     return text;
 }
 
-#define DEFAULT_NICKNAME           QT_TRANSLATE_NOOP("MainWindow", "NoName")
-
 QString getDisplayName(const User& user)
 {
     if(ttSettings->value(SETTINGS_DISPLAY_SHOWUSERNAME,
@@ -346,7 +350,7 @@ QString getDisplayName(const User& user)
 
     QString nickname = _Q(user.szNickname);
     if (nickname.isEmpty())
-        nickname = QString("%1 - #%2").arg(QCoreApplication::translate("MainWindow", DEFAULT_NICKNAME)).arg(user.nUserID);
+        nickname = QString("%1 - #%2").arg(QCoreApplication::translate("MainWindow", SETTINGS_GENERAL_NICKNAME_DEFAULT)).arg(user.nUserID);
     return limitText(nickname);
 }
 
@@ -540,18 +544,19 @@ QString getLanguageDisplayName(const QString &languageCode)
     return languageName;
 }
 
-QString getFormattedDateTime(QString originalDateTimeString, QString inputFormat)
+QString getFormattedDateTime(QString original, QString inputFormat)
 {
-    QDateTime originalDateTime = QDateTime::fromString(originalDateTimeString.simplified(), inputFormat);
+    const QString s = original.simplified();
 
-    if (!originalDateTime.isValid()) {
-        return QString("Invalid DateTime");
-    }
+    QDateTime dt = QLocale::c().toDateTime(s, inputFormat);
 
-    QLocale userLocale = QLocale::system();
-    QString formattedDateTime = userLocale.toString(originalDateTime, getTimestampFormat());
+    if (!dt.isValid())
+        dt = QLocale::c().toDateTime(s, "MMM dd yyyy HH:mm:ss");
 
-    return formattedDateTime;
+    if (!dt.isValid())
+        return QStringLiteral("Invalid DateTime");
+
+    return QLocale::system().toString(dt, getTimestampFormat());
 }
 
 QString getTimestampFormat()
@@ -770,8 +775,8 @@ QString PasswordDialog::getPassword() const
 }
 
 #if defined(Q_OS_WIN)
-#include "3rdparty/WinToast/wintoastlib.h"
 #include <Windows.h>
+#include <wintoastlib.h>
 
 using namespace WinToastLib;
 
@@ -797,8 +802,8 @@ public:
         std::wcout << L"The user clicked on button #" << actionIndex << L" in this toast" << std::endl;
     }
 
-    void toastActivated(const char* arguments) const override {
-        std::wcout << L"The user clicked in this toast with arguments: " << arguments << std::endl;
+    void toastActivated(std::wstring response) const override {
+        std::wcout << L"The user clicked in this toast with response: " << response << std::endl;
     }
 
     void toastFailed() const override {
@@ -850,7 +855,7 @@ void showNotification(const QString &title, const QString &message)
     QString noquote = message;
     noquote.replace('"', ' ');
     QStringList arguments;
-    arguments << "-t" << "3" 
+    arguments << "-t" << "500" 
             << "-a" << title
             << "-u" << "low"
             << QString("%1: %2").arg(APPNAME_SHORT, noquote);

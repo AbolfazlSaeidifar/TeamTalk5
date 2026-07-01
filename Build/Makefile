@@ -1,6 +1,5 @@
 TEAMTALK_ROOT?=$(PWD)/..
 CONFIGTYPE?=release
-CMAKE_GENERATOR?=Ninja
 
 SHELL := /bin/bash
 
@@ -9,46 +8,54 @@ help:
 	@echo "    make CONFIGTYPE=debug android-armeabi-v7a"
 
 teamtalk-env:
-	@echo "Testing that TEAMTALK_ROOT is valid."
-	@echo "Source env.sh in repository root to set up environment"
-	test -d "$(TEAMTALK_ROOT)"
+	@if [ -n "$(TEAMTALK_ROOT)" ] && [ -d "$(TEAMTALK_ROOT)" ]; then \
+		echo "Using TEAMTALK_ROOT: $(TEAMTALK_ROOT)"; \
+	else \
+		echo "Error: TEAMTALK_ROOT is not set or directory does not exist"; \
+		echo "Source env.sh in repository root to set up environment"; \
+		exit 1; \
+	fi
 
 genlib:
 	mkdir -p $(BUILDDIR)
-	cd $(BUILDDIR) && cmake $(CMAKE_EXTRA) -DCMAKE_BUILD_TYPE=$(CONFIGTYPE) -G "$(CMAKE_GENERATOR)" ../../
+	cd $(BUILDDIR) && cmake $(CMAKE_EXTRA) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$(CONFIGTYPE) ../../
 
 buildlib: genlib
 	cmake --build $(BUILDDIR) $(CMAKE_BUILD_EXTRA)
 
 android-build:
-	@echo "Testing if ANDROID_NDK_HOME environment variable is set: $(ANDROID_NDK_HOME)"
-	test -n "$(ANDROID_NDK_HOME)"
+	@if [ -n "$(ANDROID_NDK_HOME)" ] && [ -d "$(ANDROID_NDK_HOME)" ]; then \
+		echo "Using ANDROID_NDK_HOME: $(ANDROID_NDK_HOME)"; \
+	else \
+		echo "Error: ANDROID_NDK_HOME is not set or directory does not exist"; \
+		exit 1; \
+	fi; \
 	$(MAKE) CONFIGTYPE=$(CONFIGTYPE) \
         CMAKE_EXTRA+="-DCMAKE_TOOLCHAIN_FILE=$(ANDROID_NDK_HOME)/build/cmake/android.toolchain.cmake \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DANDROID_ABI=$(ANDROID_ABI) \
-        -DANDROID_PLATFORM=android-24 \
+        -DANDROID_PLATFORM=android-23 \
         -DBUILD_TEAMTALK_LIBRARY_LIB=ON \
         -DBUILD_TEAMTALK_LIBRARY_LIBPRO=ON \
-        -DBUILD_TEAMTALK_LIBRARIES=ON \
         -DBUILD_TEAMTALK_CLIENTS=OFF \
         -DBUILD_TEAMTALK_SERVERS=OFF \
         -DBUILD_TEAMTALK_SERVER_SRVEXE=OFF \
         -DBUILD_TEAMTALK_SERVER_SRVEXEPRO=OFF \
-        -DTOOLCHAIN_ZLIB=OFF \
-        -DCMAKE_POSITION_INDEPENDENT_CODE=ON" \
+        -DBUILD_TEAMTALK_DOCUMENTATION=OFF \
+        -DTOOLCHAIN_ZLIB=OFF" \
         buildlib
 
 android-armeabi-v7a: teamtalk-env
-	$(MAKE) ANDROID_ABI=armeabi-v7a BUILDDIR=build-$@ android-build
+	$(MAKE) ANDROID_ABI=armeabi-v7a BUILDDIR=build-$(CONFIGTYPE)-$@ android-build
 
 android-arm64-v8a: teamtalk-env
-	$(MAKE) ANDROID_ABI=arm64-v8a BUILDDIR=build-$@ android-build
+	$(MAKE) ANDROID_ABI=arm64-v8a BUILDDIR=build-$(CONFIGTYPE)-$@ android-build
 
 android-x86: teamtalk-env
-	$(MAKE) ANDROID_ABI=x86 BUILDDIR=build-$@ android-build
+	$(MAKE) ANDROID_ABI=x86 BUILDDIR=build-$(CONFIGTYPE)-$@ android-build
 
 android-x64: teamtalk-env
-	$(MAKE) ANDROID_ABI=x86_64 BUILDDIR=build-$@ android-build
+	$(MAKE) ANDROID_ABI=x86_64 BUILDDIR=build-$(CONFIGTYPE)-$@ android-build
 
 android-all: android-armeabi-v7a android-arm64-v8a android-x86 android-x64
 
@@ -57,45 +64,23 @@ generic:
 
 ubuntu:
 	@echo May need to specify JAVA_HOME to help CMake find Java SDK
-	$(MAKE) BUILDDIR=build-$(UBUNTUDIR) \
+	$(MAKE) BUILDDIR=build-$(CONFIGTYPE)-$(UBUNTUDIR) \
 	CMAKE_EXTRA+="-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 	-DTOOLCHAIN_OPENSSL=OFF" generic
 
-ubuntu18:
-	$(MAKE) CMAKE_EXTRA+="-DBUILD_TEAMTALK_LIBRARY_DLL=OFF \
-                              -DBUILD_TEAMTALK_LIBRARY_DLLPRO=OFF \
-                              -DBUILD_TEAMTALK_LIBRARIES=OFF \
-                              -DBUILD_TEAMTALK_SERVERS=OFF \
-                              -DBUILD_TEAMTALK_CLIENTS=OFF \
-                              -DTOOLCHAIN_OPENSSL=OFF \
-                              -DTOOLCHAIN_ZLIB=OFF \
-                              -DTOOLCHAIN_CATCH2=OFF \
-                              -DTOOLCHAIN_LIBVPX=OFF \
-                              -DTOOLCHAIN_FFMPEG=OFF \
-                              -DTOOLCHAIN_OGG=OFF \
-                              -DTOOLCHAIN_OPUS=OFF \
-                              -DTOOLCHAIN_PORTAUDIO=OFF \
-                              -DTOOLCHAIN_SPEEX=OFF \
-                              -DTOOLCHAIN_SPEEXDSP=OFF \
-                              -DFEATURE_OPUSTOOLS=OFF \
-                              -DFEATURE_WEBRTC=OFF \
-                              -DBUILD_TEAMTALK_DOCUMENTATION=OFF" UBUNTUDIR=$@ ubuntu
-ubuntu19:
-	$(MAKE) UBUNTUDIR=$@ ubuntu
-ubuntu20:
-	$(MAKE) UBUNTUDIR=$@ ubuntu
-ubuntu22:
-	$(MAKE) UBUNTUDIR=$@ ubuntu
 ubuntu24:
+	$(MAKE) UBUNTUDIR=$@ ubuntu
+
+ubuntu26:
 	$(MAKE) UBUNTUDIR=$@ ubuntu
 
 rasp:
 	$(MAKE) CMAKE_EXTRA+="-DFEATURE_WEBRTC=OFF \
                               -DTOOLCHAIN_OPENSSL=OFF" \
-                              BUILDDIR=build-$@ generic
+                              BUILDDIR=build-$(CONFIGTYPE)-$@ generic
 
 mac:
-	$(MAKE) BUILDDIR=build-$@ CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\"" generic
+	$(MAKE) BUILDDIR=build-$(CONFIGTYPE)-$@ CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=\"arm64;x86_64\"" generic
 
 ios-build:
 	$(MAKE) CMAKE_EXTRA+="-DCMAKE_SYSTEM_NAME=iOS \
@@ -103,25 +88,24 @@ ios-build:
         -DBUILD_TEAMTALK_LIBRARY_LIBPRO=ON \
         -DBUILD_TEAMTALK_LIBRARY_DLL=OFF \
         -DBUILD_TEAMTALK_LIBRARY_DLLPRO=OFF \
-        -DFEATURE_OGG=OFF \
-        -DFEATURE_FFMPEG=OFF \
-        -DFEATURE_OPUSTOOLS=OFF \
         -DBUILD_TEAMTALK_LIBRARIES=OFF \
         -DBUILD_TEAMTALK_CLIENTS=OFF \
         -DBUILD_TEAMTALK_SERVERS=OFF \
         -DBUILD_TEAMTALK_SERVER_SRVEXE=OFF \
         -DBUILD_TEAMTALK_SERVER_SRVEXEPRO=OFF \
+        -DBUILD_TEAMTALK_DOCUMENTATION=OFF \
+        -DFEATURE_FFMPEG=OFF \
+        -DFEATURE_OGG=OFF \
+        -DFEATURE_OPUSTOOLS=OFF \
         -DTOOLCHAIN_ZLIB=OFF" \
         buildlib
 
-IOS_INSTALL_DIR?=$(PWD)/ios-install
-
 ios-arm64:
-	$(MAKE) CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DTOOLCHAIN_INSTALL_PREFIX=$(INSTALLDIR)/arm64" BUILDDIR=build-$@ ios-build
+	$(MAKE) CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DTOOLCHAIN_INSTALL_PREFIX=$(INSTALLDIR)/arm64" BUILDDIR=build-$(CONFIGTYPE)-$@ ios-build
 	$(MAKE) ARCH=arm64 lipo-arch
 
 ios-x64:
-	$(MAKE) CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_SYSROOT=iphonesimulator -DTOOLCHAIN_INSTALL_PREFIX=$(INSTALLDIR)/x86_64" BUILDDIR=build-$@ ios-build
+	$(MAKE) CMAKE_EXTRA+="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_SYSROOT=iphonesimulator -DTOOLCHAIN_INSTALL_PREFIX=$(INSTALLDIR)/x86_64" BUILDDIR=build-$(CONFIGTYPE)-$@ ios-build
 	$(MAKE) ARCH=x86_64 lipo-arch
 
 ios-all: ios-arm64 ios-x64 lipo
@@ -170,120 +154,35 @@ xcodeswap-apps:
 	sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 teamtalk-jar:
-	$(MAKE) BUILDDIR=build-$@ CMAKE_EXTRA+="-DBUILD_TEAMTALK_CLIENTS=OFF \
-        -DBUILD_TEAMTALK_SERVERS=OFF \
+	$(MAKE) BUILDDIR=build-$(CONFIGTYPE)-$@ CMAKE_EXTRA+="-DBUILD_TEAMTALK_CORE=OFF \
         -DBUILD_TEAMTALK_LIBRARY_JNI=OFF \
         -DBUILD_TEAMTALK_LIBRARY_JNIPRO=OFF \
-        -DBUILD_TEAMTALK_LIBRARY_DLL_DOTNET=OFF \
-        -DBUILD_TEAMTALK_LIBRARY_DLLPRO_DOTNET=OFF \
-        -DBUILD_TEAMTALK_LIBRARY_DLL_DOTNET=OFF \
-        -DBUILD_TEAMTALK_LIBRARY_DLLPRO_DOTNET=OFF" \
+        -DBUILD_TEAMTALK_CLIENTS=OFF \
+        -DBUILD_TEAMTALK_SERVERS=OFF \
+        -DBUILD_TEAMTALK_DOCUMENTATION=OFF" \
         buildlib
 
-# TeamTalk 5 dependencies for Ubuntu 18
-depend-ubuntu18:
-# Duplicate install in Docker/Dockerfile_ubuntu18
-	apt-get install \
-		autoconf \
-		cmake \
-		doxygen \
-		g++ \
-		junit4 \
-		libasound2-dev \
-		libpcap-dev \
-		libpulse-dev \
-		libqt5texttospeech5-dev \
-		libqt5x11extras5-dev \
-		libssl-dev \
-		libtool \
-		libxss-dev
-		ninja-build \
-		openjdk-11-jdk \
-		pkg-config \
-		python \
-		python3-pytest \
-		qt5-default \
-		qtmultimedia5-dev \
-		qttools5-dev \
-		qttools5-dev-tools \
-		yasm
-
-depend-ubuntu20:
-# Duplicate install in Docker/Dockerfile_ubuntu20
-	apt-get install \
-		autoconf \
-		cmake \
-		doxygen \
-		g++ \
-		junit4 \
-		libasound2-dev \
-		libpcap-dev \
-		libpulse-dev \
-		libqt5texttospeech5-dev \
-		libqt5x11extras5-dev \
-		libssl-dev \
-		libtool \
-		libxss-dev \
-		ninja-build \
-		openjdk-17-jdk \
-		pkg-config \
-		python \
-		qt5-default \
-		qtmultimedia5-dev \
-		qttools5-dev \
-		qttools5-dev-tools \
-		yasm
-
-depend-ubuntu22:
-# Duplicate install in Docker/Dockerfile_ubuntu22
-	apt-get install \
-		autoconf \
-		cmake \
-		doxygen \
-		g++ \
-		junit4 \
-		libasound2-dev \
-		libpcap-dev \
-		libpulse-dev \
-		libqt5texttospeech5-dev \
-		libqt5x11extras5-dev \
-		libssl-dev \
-		libtool \
-		libxss-dev \
-		ninja-build \
-		openjdk-18-jdk \
-		p7zip-full \
-		pkg-config \
-		python2 \
-		python3-pytest \
-		qtbase5-dev \
-		qtmultimedia5-dev \
-		qttools5-dev \
-		qttools5-dev-tools \
-		wget \
-		yasm
-	@echo "Ensure a default python is set up for WebRTC to compile:"
-	@echo "# sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 10"
-
 depend-ubuntu24:
-# Duplicate install in Docker/Dockerfile_ubuntu24
 	apt-get install \
 		autoconf \
 		cmake \
 		doxygen \
 		g++ \
-		git \
-		junit4 \
+		junit5 \
 		libasound2-dev \
+		libglib2.0-dev \
 		libpcap-dev \
 		libpulse-dev \
+		libspeechd-dev \
 		libssl-dev \
 		libtool \
 		libxss-dev \
+		nasm \
 		ninja-build \
-		openjdk-21-jdk \
+		openjdk-25-jdk \
 		p7zip-full \
 		pkg-config \
+		python-is-python3 \
 		python3-pytest \
 		qt6-base-dev \
 		qt6-declarative-dev \
@@ -292,41 +191,70 @@ depend-ubuntu24:
 		qt6-tools-dev \
 		qt6-tools-dev-tools \
 		wget \
-		xz-utils \
-		yasm
-	@echo "Ensure a default python is set up for WebRTC to compile:"
-	@echo "# sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 12"
+		xz-utils
+
+depend-ubuntu26:
+	apt-get install \
+		autoconf \
+		cmake \
+		doxygen \
+		g++ \
+		junit5 \
+		libasound2-dev \
+		libglib2.0-dev \
+		libpcap-dev \
+		libpulse-dev \
+		libspeechd-dev \
+		libssl-dev \
+		libtool \
+		libxss-dev \
+		nasm \
+		ninja-build \
+		openjdk-25-jdk \
+		p7zip-full \
+		pkg-config \
+		python-is-python3 \
+		python3-pytest \
+		qt6-base-dev \
+		qt6-declarative-dev \
+		qt6-multimedia-dev \
+		qt6-speech-dev \
+		qt6-tools-dev \
+		qt6-tools-dev-tools \
+		wget \
+		xz-utils
 
 depend-ubuntu24-android:
 	apt-get install \
 		autoconf \
 		cmake \
-		curl \
 		doxygen \
-		junit4 \
 		libtool \
+		nasm \
 		ninja-build \
-		openjdk-21-jdk \
+		openjdk-25-jdk \
 		p7zip-full \
 		pkg-config \
-		unzip \
 		wget \
 		xz-utils
 
-depend-debian12:
+depend-raspios12:
 	apt-get install \
 		autoconf \
 		cmake \
 		doxygen \
 		g++ \
 		git \
-		junit4 \
+		junit5 \
 		libasound2-dev \
+		libglib2.0-dev \
 		libpcap-dev \
 		libpulse-dev \
+		libspeechd-dev \
 		libssl-dev \
 		libtool \
 		libxss-dev \
+		nasm \
 		ninja-build \
 		openjdk-17-jdk \
 		p7zip-full \
@@ -337,36 +265,7 @@ depend-debian12:
 		qt6-multimedia-dev \
 		qt6-speech-dev \
 		qt6-tools-dev \
-		qt6-tools-dev-tools \
-		wget \
-		yasm
-
-depend-raspios12:
-	apt-get-get install \
-		autoconf \
-		cmake \
-		doxygen \
-		g++ \
-		git \
-		junit4 \
-		libasound2-dev \
-		libpcap-dev \
-		libpulse-dev \
-		libssl-dev \
-		libtool \
-		libxss-dev \
-		ninja-build \
-		openjdk-17-jdk \
-		p7zip-full \
-		pkg-config \
-		python3-pytest \
-		qt6-base-dev \
-		qt6-declarative-dev \
-		qt6-multimedia-dev \
-		qt6-speech-dev \
-		qt6-tools-dev \
-		qt6-tools-dev-tools \
-		yasm
+		qt6-tools-dev-tools
 
 depend-mac:
 	brew install \
@@ -374,7 +273,7 @@ depend-mac:
 		automake \
 		doxygen \
 		libtool \
+		nasm \
 		ninja \
 		pkg-config \
-		python-setuptools \
-		yasm
+		python-setuptools

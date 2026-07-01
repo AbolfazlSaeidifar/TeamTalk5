@@ -14,38 +14,29 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
     ExternalProject_Add(ffmpeg-arm64-src
       GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
-      GIT_TAG           n6.1.2
+      GIT_TAG           n8.1.1
       GIT_SHALLOW       TRUE
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg-arm64
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG}-arm64
       CONFIGURE_COMMAND export PKG_CONFIG_PATH=${OPENSSL_DIR}/lib/pkgconfig && <SOURCE_DIR>/configure
       --prefix=<INSTALL_DIR>
-      # External libraries:
-      --disable-iconv
-      --disable-libxcb
-      --disable-libxcb-shape
-      --disable-libxcb-shm
-      --disable-libxcb-xfixes
-      --disable-lzma
-      --disable-schannel
-      --disable-sdl2
-      --disable-securetransport
-      --disable-xlib
-      --enable-openssl
       # Programs/docs
       --disable-doc
       --disable-programs
-      # Compile options (yasm does not work for arm64)
+      # Minimal build
+      --disable-autodetect
+      --enable-openssl
+      --enable-zlib
+      # Compile options (nasm does not work for arm64)
       --disable-asm
-      --disable-optimizations
-      --disable-stripping
-      --enable-debug=3
+      --disable-debug
       --extra-cflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ arm64
       --extra-cxxflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ arm64
       --extra-ldexeflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ arm64
       --pkg-config-flags=--static
-      --enable-cross-compile --target-os=darwin --arch=arm64
+      --enable-cross-compile
+      --target-os=darwin --arch=arm64
       BUILD_COMMAND     make ${TOOLCHAIN_BUILD_MAKEJOBS}
       INSTALL_COMMAND   make ${TOOLCHAIN_BUILD_MAKEJOBS} install
       BUILD_BYPRODUCTS  <INSTALL_DIR>/lib/libavdevice.a
@@ -61,37 +52,28 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
     ExternalProject_Add(ffmpeg-intel-src
       GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
-      GIT_TAG           n6.1.2
+      GIT_TAG           n8.1.1
       GIT_SHALLOW       TRUE
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg-intel
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG}-intel
       CONFIGURE_COMMAND export PKG_CONFIG_PATH=${OPENSSL_DIR}/lib/pkgconfig && <SOURCE_DIR>/configure
       --prefix=<INSTALL_DIR>
-      # External libraries:
-      --disable-iconv
-      --disable-libxcb
-      --disable-libxcb-shape
-      --disable-libxcb-shm
-      --disable-libxcb-xfixes
-      --disable-lzma
-      --disable-schannel
-      --disable-sdl2
-      --disable-securetransport
-      --disable-xlib
-      --enable-openssl
       # Programs/docs
       --disable-doc
       --disable-programs
+      # Minimal build
+      --disable-autodetect
+      --enable-openssl
+      --enable-zlib
       # Compile options
-      --disable-optimizations
-      --disable-stripping
-      --enable-debug=3
+      --disable-debug
       --extra-cflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ x86_64
       --extra-cxxflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ x86_64
       --extra-ldexeflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}\ -arch\ x86_64
       --pkg-config-flags=--static
-      --enable-cross-compile --target-os=darwin --arch=x86_64
+      --enable-cross-compile
+      --target-os=darwin --arch=x86_64
       BUILD_COMMAND     make ${TOOLCHAIN_BUILD_MAKEJOBS}
       INSTALL_COMMAND   make ${TOOLCHAIN_BUILD_MAKEJOBS} install
       BUILD_BYPRODUCTS  <INSTALL_DIR>/lib/libavdevice.a
@@ -231,7 +213,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(gas-preprocessor
       GIT_REPOSITORY    https://github.com/FFmpeg/gas-preprocessor.git
-      GIT_TAG           7380ac2
+      GIT_TAG           ac18363
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/gas-preprocessor
       INSTALL_DIR       ""
@@ -243,13 +225,14 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
     set (GAS_DIR ${SOURCE_DIR})
 
     set (FFMPEG_CFG_FLAGS --target-os=darwin --sysroot=${CMAKE_OSX_SYSROOT}
-      # External libraries:
-      --disable-videotoolbox
-      --disable-audiotoolbox
       # Programs/docs
       --disable-doc
       --disable-programs
+      # Minimal build
+      --disable-autodetect
+      --enable-zlib
       # Compile options
+      --disable-debug
       --enable-pic
       --enable-cross-compile)
 
@@ -284,7 +267,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 
     ExternalProject_Add(ffmpeg-src
       GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
-      GIT_TAG           n6.1.2
+      GIT_TAG           n8.1.1
       GIT_SHALLOW       TRUE
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg
@@ -365,24 +348,127 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
   set_property(TARGET ffmpeg-avutil PROPERTY IMPORTED_LOCATION
     ${INSTALL_DIR}/lib/libavutil.a)
 
+elseif (MSVC)
+
+  if (${CMAKE_SIZEOF_VOID_P} EQUAL 8)
+    set(FFMPEG_ARCH x86_64)
+    set(FFMPEG_TARGET_OS win64)
+  else()
+    set(FFMPEG_ARCH x86)
+    set(FFMPEG_TARGET_OS win32)
+  endif()
+
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    set(FFMPEG_INSTALL_DIR ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG})
+    configure_file(${CMAKE_CURRENT_LIST_DIR}/build-ffmpeg-win.bat_sample ${CMAKE_CURRENT_BINARY_DIR}/build-ffmpeg-win.bat @ONLY)
+
+    ExternalProject_Add(ffmpeg-src
+      GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
+      GIT_TAG           n8.1.1
+      GIT_SHALLOW       TRUE
+      GIT_CONFIG        core.autocrlf=false core.eol=lf
+      UPDATE_COMMAND    ""
+      PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg
+      INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG}
+      CONFIGURE_COMMAND ""
+      BUILD_COMMAND     ${CMAKE_CURRENT_BINARY_DIR}/build-ffmpeg-win.bat
+      INSTALL_COMMAND   ""
+      BUILD_IN_SOURCE   TRUE
+      BUILD_BYPRODUCTS  <INSTALL_DIR>/lib/avdevice.lib
+      <INSTALL_DIR>/lib/avfilter.lib
+      <INSTALL_DIR>/lib/avformat.lib
+      <INSTALL_DIR>/lib/avcodec.lib
+      <INSTALL_DIR>/lib/swresample.lib
+      <INSTALL_DIR>/lib/swscale.lib
+      <INSTALL_DIR>/lib/avutil.lib
+      DEPENDS           ${NASM_TARGET}
+      )
+    ExternalProject_Get_Property(ffmpeg-src INSTALL_DIR)
+    file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
+  else()
+    set(INSTALL_DIR ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG})
+  endif()
+
+  set(FFMPEG_LINK bcrypt ws2_32 secur32 strmiids ole32 user32 shlwapi vfw32)
+
+  add_library(ffmpeg-avdevice STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-avdevice ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-avdevice INTERFACE ${INSTALL_DIR}/include)
+  set_target_properties(ffmpeg-avdevice PROPERTIES
+    INTERFACE_COMPILE_OPTIONS -D__STDC_CONSTANT_MACROS
+    IMPORTED_LOCATION ${INSTALL_DIR}/lib/avdevice.lib)
+  target_link_libraries(ffmpeg-avdevice INTERFACE ${FFMPEG_LINK})
+
+  add_library(ffmpeg-avfilter STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-avfilter ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-avfilter INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-avfilter PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/avfilter.lib)
+
+  add_library(ffmpeg-avformat STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-avformat ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-avformat INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-avformat PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/avformat.lib)
+
+  add_library(ffmpeg-avcodec STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-avcodec ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-avcodec INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-avcodec PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/avcodec.lib)
+
+  add_library(ffmpeg-swresample STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-swresample ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-swresample INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-swresample PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/swresample.lib)
+
+  add_library(ffmpeg-swscale STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-swscale ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-swscale INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-swscale PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/swscale.lib)
+
+  add_library(ffmpeg-avutil STATIC IMPORTED GLOBAL)
+  if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
+    add_dependencies(ffmpeg-avutil ffmpeg-src)
+  endif()
+  target_include_directories(ffmpeg-avutil INTERFACE ${INSTALL_DIR}/include)
+  set_property(TARGET ffmpeg-avutil PROPERTY IMPORTED_LOCATION
+    ${INSTALL_DIR}/lib/avutil.lib)
+
 elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(ffmpeg-src
       GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
-      GIT_TAG           n6.1.2
+      GIT_TAG           n8.1.1
       GIT_SHALLOW       TRUE
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG}
       CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR>
-      # External libraries:
-      --disable-libxcb
-      --enable-openssl
       # Programs/docs
       --disable-doc
       --disable-programs
+      # Minimal build
+      --disable-autodetect
+      --enable-openssl
+      --enable-zlib
       # Compile options
+      --disable-debug
       --enable-pic
       BUILD_COMMAND     make ${TOOLCHAIN_BUILD_MAKEJOBS}
       INSTALL_COMMAND   make ${TOOLCHAIN_BUILD_MAKEJOBS} install
@@ -484,20 +570,20 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Android")
 
     ExternalProject_Add(ffmpeg-src
       GIT_REPOSITORY    https://github.com/FFmpeg/FFmpeg.git
-      GIT_TAG           n6.1.2
+      GIT_TAG           n8.1.1
       GIT_SHALLOW       TRUE
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/ffmpeg
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_FFMPEG}
       CONFIGURE_COMMAND ${FFMPEG_EXPORT} && <SOURCE_DIR>/configure ${FFMPEG_CFG} --prefix=<INSTALL_DIR>
-      # External libraries:
-      --disable-indev=v4l2
-      --disable-indev=android_camera
-      --disable-vulkan
       # Programs/docs
       --disable-doc
       --disable-programs
+      # Minimal build
+      --disable-autodetect
+      --enable-zlib
       # Compile options
+      --disable-debug
       --enable-pic
       --enable-cross-compile --sysroot=${CMAKE_SYSROOT} --target-os=android
       BUILD_COMMAND     ${FFMPEG_EXPORT} && make ${TOOLCHAIN_BUILD_MAKEJOBS}

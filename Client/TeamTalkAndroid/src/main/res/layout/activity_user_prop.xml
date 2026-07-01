@@ -5,7 +5,6 @@
     tools:context=".UserPropActivity">
 
     <GridLayout
-        android:id="@+id/GridLayout1"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:columnCount="2"
@@ -64,7 +63,6 @@
         android:text=""/>
 
     <TextView
-        android:id="@+id/user_vol_voicelabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_column="0"
@@ -73,7 +71,6 @@
         android:text="@string/user_prop_title_voice_volume" />
 
     <LinearLayout
-        android:id="@+id/voicevolLayout"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_column="0"
@@ -108,8 +105,25 @@
         android:layout_gravity="center_vertical"
         android:text="@string/user_prop_title_mute_voice" />
 
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/user_mutevoice_leftSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_column="0"
+        android:layout_columnSpan="2"
+        android:layout_gravity="center_vertical"
+        android:text="@string/user_prop_title_mute_voice_left" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/user_mutevoice_rightSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_column="0"
+        android:layout_columnSpan="2"
+        android:layout_gravity="center_vertical"
+        android:text="@string/user_prop_title_mute_voice_right" />
+
     <TextView
-        android:id="@+id/user_vol_medialabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_column="0"
@@ -117,7 +131,6 @@
         android:text="@string/user_prop_title_media_volume" />
 
     <LinearLayout
-        android:id="@+id/mfvolumeLayout"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_column="0"
@@ -150,6 +163,24 @@
         android:layout_columnSpan="2"
         android:layout_gravity="center_vertical"
         android:text="@string/user_prop_title_mute_media" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/user_mutemedia_leftSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_column="0"
+        android:layout_columnSpan="2"
+        android:layout_gravity="center_vertical"
+        android:text="@string/user_prop_title_mute_media_left" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/user_mutemedia_rightSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_column="0"
+        android:layout_columnSpan="2"
+        android:layout_gravity="center_vertical"
+        android:text="@string/user_prop_title_mute_media_right" />
 
     <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/user_subscribetxtmsgSwitch"

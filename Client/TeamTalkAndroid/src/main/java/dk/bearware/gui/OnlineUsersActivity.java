@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import dk.bearware.ClientEvent;
@@ -61,6 +62,8 @@ import dk.bearware.TeamTalkBase;
 import dk.bearware.UserAccount;
 import dk.bearware.UserRight;
 import dk.bearware.UserState;
+import dk.bearware.backend.TeamTalkConnection;
+import dk.bearware.backend.TeamTalkConnectionListener;
 import dk.bearware.backend.TeamTalkService;
 import dk.bearware.events.ClientEventListener;
 
@@ -69,21 +72,29 @@ public class OnlineUsersActivity extends AppCompatActivity implements
         ClientEventListener.OnCmdUserLoggedOutListener,
         ClientEventListener.OnCmdUserJoinedChannelListener,
         ClientEventListener.OnCmdUserLeftChannelListener,
-        ClientEventListener.OnCmdUserUpdateListener {
+        ClientEventListener.OnCmdUserUpdateListener, TeamTalkConnectionListener {
 
     private static final String TAG = "OnlineUsersActivity";
 
-    private TeamTalkService ttservice;
-    private TeamTalkBase ttclient;
+    private TeamTalkConnection mConnection;
     private ListView onlineUsersList;
     private OnlineUserAdapter adapter;
     private final ArrayList<User> onlineUsers = new ArrayList<>();
-    private boolean isBound = false;
+
+    TeamTalkService getService() {
+        return mConnection.getService();
+    }
+
+    TeamTalkBase getClient() {
+        return getService().getTTInstance();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mConnection = new TeamTalkConnection(this);
         setContentView(R.layout.activity_online_users);
+        EdgeToEdgeHelper.enableEdgeToEdge(this);
 
         onlineUsersList = findViewById(R.id.online_users_list);
         adapter = new OnlineUserAdapter(this, onlineUsers);
@@ -105,63 +116,60 @@ public class OnlineUsersActivity extends AppCompatActivity implements
                 User selectedUser = onlineUsers.get(position);
                 AlertDialog.Builder alert = new AlertDialog.Builder(OnlineUsersActivity.this);
                 UserAccount myuseraccount = new UserAccount();
-                ttclient.getMyUserAccount(myuseraccount);
+                getClient().getMyUserAccount(myuseraccount);
                 boolean banRight = (myuseraccount.uUserRights & UserRight.USERRIGHT_BAN_USERS) != UserRight.USERRIGHT_NONE;
                 boolean kickRight = (myuseraccount.uUserRights & UserRight.USERRIGHT_KICK_USERS) != UserRight.USERRIGHT_NONE;
                 // operator of a channel can also kick users
-                int myuserid = ttclient.getMyUserID();
-                boolean operatorRight = ttclient.isChannelOperator(myuserid, selectedUser.nChannelID);
+                int myuserid = getClient().getMyUserID();
+                boolean operatorRight = getClient().isChannelOperator(myuserid, selectedUser.nChannelID);
 
                 PopupMenu onlineActions = new PopupMenu(OnlineUsersActivity.this, v);
                 onlineActions.inflate(R.menu.online_actions);
 
                 onlineActions.setOnMenuItemClickListener(item -> {
-                    switch (item.getItemId()) {
-                        case R.id.action_edituser: {
-                            Intent intent = new Intent(OnlineUsersActivity.this, UserPropActivity.class);
-                            startActivity(intent.putExtra(UserPropActivity.EXTRA_USERID, selectedUser.nUserID));
+                    int itemId = item.getItemId();
+                    if (itemId == R.id.action_edituser) {
+                        Intent intent = new Intent(OnlineUsersActivity.this, UserPropActivity.class);
+                        startActivity(intent.putExtra(UserPropActivity.EXTRA_USERID, selectedUser.nUserID));
+                        return true;
+                    } else if (itemId == R.id.action_message) {
+                        Intent intent = new Intent(OnlineUsersActivity.this, TextMessageActivity.class);
+                        startActivity(intent.putExtra(TextMessageActivity.EXTRA_USERID, selectedUser.nUserID));
+                        return true;
+                    } else if (itemId == R.id.action_banchan) {
+                        confirmAction(alert, R.string.ban_confirmation, selectedUser,
+                                () -> banAndKick(selectedUser, selectedUser.nChannelID));
+                        return true;
+                    } else if (itemId == R.id.action_bansrv) {
+                        confirmAction(alert, R.string.ban_confirmation, selectedUser,
+                                () -> banAndKick(selectedUser, 0));
+                        return true;
+                    } else if (itemId == R.id.action_kickchan) {
+                        confirmAction(alert, R.string.kick_confirmation, selectedUser,
+                                () -> getClient().doKickUser(selectedUser.nUserID, selectedUser.nChannelID));
+                        return true;
+                    } else if (itemId == R.id.action_kicksrv) {
+                        confirmAction(alert, R.string.kick_confirmation, selectedUser,
+                                () -> getClient().doKickUser(selectedUser.nUserID, 0));
+                        return true;
+                    } else if (itemId == R.id.action_makeop) {
+                        boolean isOp = getClient().isChannelOperator(selectedUser.nUserID, selectedUser.nChannelID);
+                        if ((myuseraccount.uUserRights & UserRight.USERRIGHT_OPERATOR_ENABLE) != UserRight.USERRIGHT_NONE) {
+                            getClient().doChannelOp(selectedUser.nUserID, selectedUser.nChannelID, !isOp);
+                            return true;
                         }
-                            return true;
-                        case R.id.action_message: {
-                            Intent intent = new Intent(OnlineUsersActivity.this, TextMessageActivity.class);
-                            startActivity(intent.putExtra(TextMessageActivity.EXTRA_USERID, selectedUser.nUserID));
-                        }
-                            return true;
-                        case R.id.action_banchan:
-                confirmAction(alert, R.string.ban_confirmation, selectedUser,
-                        () -> banAndKick(selectedUser, selectedUser.nChannelID));
-                            return true;
-                        case R.id.action_bansrv:
-                confirmAction(alert, R.string.ban_confirmation, selectedUser,
-                        () -> banAndKick(selectedUser, 0));
-                            return true;
-                        case R.id.action_kickchan:
-                confirmAction(alert, R.string.kick_confirmation, selectedUser,
-                        () -> ttclient.doKickUser(selectedUser.nUserID, selectedUser.nChannelID));
-                            return true;
-                        case R.id.action_kicksrv:
-                confirmAction(alert, R.string.kick_confirmation, selectedUser,
-                        () -> ttclient.doKickUser(selectedUser.nUserID, 0));
-                            return true;
-                        case R.id.action_makeop:
-                boolean isOp = ttclient.isChannelOperator(selectedUser.nUserID, selectedUser.nChannelID);
-                            if ((myuseraccount.uUserRights & UserRight.USERRIGHT_OPERATOR_ENABLE) != UserRight.USERRIGHT_NONE) {
-                                ttclient.doChannelOp(selectedUser.nUserID, selectedUser.nChannelID, !isOp);
-                                return true;
-                            }
-                            alert.setTitle(!isOp ? R.string.action_revoke_operator : R.string.action_make_operator);
-                            alert.setMessage(R.string.text_operator_password);
-                            final EditText input = new EditText(OnlineUsersActivity.this);
-                            input.setInputType(InputType.TYPE_TEXT_VARIATION_PASSWORD | InputType.TYPE_CLASS_TEXT);
-                            alert.setPositiveButton(android.R.string.yes, (dialog, whichButton) -> 
-                            ttclient.doChannelOpEx(selectedUser.nUserID, selectedUser.nChannelID, input.getText().toString(), !isOp));
-                            alert.setNegativeButton(android.R.string.no, null);
-                            alert.setView(input);
-                            alert.show();
-                            return true;
-
-                        default:
-                            return false;
+                        alert.setTitle(!isOp ? R.string.action_revoke_operator : R.string.action_make_operator);
+                        alert.setMessage(R.string.text_operator_password);
+                        final EditText input = new EditText(OnlineUsersActivity.this);
+                        input.setInputType(InputType.TYPE_TEXT_VARIATION_PASSWORD | InputType.TYPE_CLASS_TEXT);
+                        alert.setPositiveButton(android.R.string.yes, (dialog, whichButton) ->
+                                getClient().doChannelOpEx(selectedUser.nUserID, selectedUser.nChannelID, input.getText().toString(), !isOp));
+                        alert.setNegativeButton(android.R.string.no, null);
+                        alert.setView(input);
+                        alert.show();
+                        return true;
+                    } else {
+                        return false;
                     }
                 });
 
@@ -169,7 +177,7 @@ public class OnlineUsersActivity extends AppCompatActivity implements
             onlineActions.getMenu().findItem(R.id.action_kicksrv).setEnabled(kickRight).setVisible(kickRight);
             onlineActions.getMenu().findItem(R.id.action_banchan).setEnabled(banRight | operatorRight).setVisible(banRight | operatorRight);
             onlineActions.getMenu().findItem(R.id.action_bansrv).setEnabled(banRight).setVisible(banRight);
-            onlineActions.getMenu().findItem(R.id.action_makeop).setTitle(ttclient.isChannelOperator(selectedUser.nUserID , selectedUser.nChannelID) ? R.string.action_revoke_operator : R.string.action_make_operator);
+            onlineActions.getMenu().findItem(R.id.action_makeop).setTitle(getClient().isChannelOperator(selectedUser.nUserID , selectedUser.nChannelID) ? R.string.action_revoke_operator : R.string.action_make_operator);
 
                 onlineActions.show();
                 return true;
@@ -177,35 +185,19 @@ public class OnlineUsersActivity extends AppCompatActivity implements
         });
 
         Intent intent = new Intent(this, TeamTalkService.class);
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
+        if(!bindService(intent, mConnection, Context.BIND_AUTO_CREATE)) {
+            Log.e(TAG, "Failed to bind to TeamTalk service");
+        }
     }
 
     @Override
     protected void onDestroy() {
-        if (isBound) {
-            ttservice.getEventHandler().unregisterListener(this);
-            unbindService(serviceConnection);
-            isBound = false;
+        if (mConnection.isBound()) {
+            getService().getEventHandler().unregisterListener(this);
+            unbindService(mConnection);
         }
         super.onDestroy();
     }
-
-    private final ServiceConnection serviceConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            TeamTalkService.LocalBinder binder = (TeamTalkService.LocalBinder) service;
-            ttservice = binder.getService();
-            ttclient = ttservice.getTTInstance();
-            isBound = true;
-            registerEventListeners();
-            populateUserList();
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            isBound = false;
-        }
-    };
 
     private void confirmAction(AlertDialog.Builder alert, int messageResId, User user, Runnable action) {
         alert.setMessage(getString(messageResId, user.szNickname));
@@ -215,30 +207,26 @@ public class OnlineUsersActivity extends AppCompatActivity implements
     }
 
     private void banAndKick(User user, int channelId) {
-        ttclient.doBanUser(user.nUserID, channelId);
-        ttclient.doKickUser(user.nUserID, channelId);
+        getClient().doBanUser(user.nUserID, channelId);
+        getClient().doKickUser(user.nUserID, channelId);
     }
 
     private void registerEventListeners() {
-        if (ttservice != null) {
-            ttservice.getEventHandler().registerOnCmdUserLoggedIn(this, true);
-            ttservice.getEventHandler().registerOnCmdUserLoggedOut(this, true);
-            ttservice.getEventHandler().registerOnCmdUserJoinedChannel(this, true);
-            ttservice.getEventHandler().registerOnCmdUserLeftChannel(this, true);
-            ttservice.getEventHandler().registerOnCmdUserUpdate(this, true);
-        }
+        getService().getEventHandler().registerOnCmdUserLoggedIn(this, true);
+        getService().getEventHandler().registerOnCmdUserLoggedOut(this, true);
+        getService().getEventHandler().registerOnCmdUserJoinedChannel(this, true);
+        getService().getEventHandler().registerOnCmdUserLeftChannel(this, true);
+        getService().getEventHandler().registerOnCmdUserUpdate(this, true);
     }
 
     private void populateUserList() {
-        if (ttservice != null) {
-            onlineUsers.clear();
-            onlineUsers.addAll(ttservice.getUsers().values());
-            sortAndNotifyDataSetChanged();
-        }
+        onlineUsers.clear();
+        onlineUsers.addAll(getService().getUsers().values());
+        sortAndNotifyDataSetChanged();
     }
 
     private void sortAndNotifyDataSetChanged() {
-        onlineUsers.sort(Comparator.comparing(u -> u.szNickname.toLowerCase()));
+        onlineUsers.sort(Comparator.comparing(u -> u.szNickname.toLowerCase(Locale.ROOT)));
         adapter.notifyDataSetChanged();
     }
 
@@ -295,6 +283,17 @@ public class OnlineUsersActivity extends AppCompatActivity implements
         updateUser(user);
     }
 
+    @Override
+    public void onServiceConnected(TeamTalkService service) {
+        registerEventListeners();
+        populateUserList();
+    }
+
+    @Override
+    public void onServiceDisconnected(TeamTalkService service) {
+
+    }
+
     private class OnlineUserAdapter extends ArrayAdapter<User> {
         private final LayoutInflater inflater;
 
@@ -310,7 +309,7 @@ public class OnlineUsersActivity extends AppCompatActivity implements
                 convertView = inflater.inflate(android.R.layout.simple_list_item_1, parent, false);
             }
 
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
+            TextView textView = convertView.findViewById(android.R.id.text1);
             User user = getItem(position);
 
             if (user != null) {
@@ -327,8 +326,8 @@ public class OnlineUsersActivity extends AppCompatActivity implements
                     userInfo.append(", ").append(getString(R.string.online_user_info_statusmsg)).append(": ").append(user.szStatusMsg);
                 }
 
-                if (ttservice != null && ttservice.getChannels() != null) {
-                    Channel userChannel = ttservice.getChannels().get(user.nChannelID);
+                if (getService().getChannels() != null) {
+                    Channel userChannel = getService().getChannels().get(user.nChannelID);
                     if (userChannel != null) {
                         userInfo.append(", ").append(getString(R.string.online_user_info_channel)).append(": ").append(userChannel.szName);
                     }

@@ -56,14 +56,22 @@ extends AppCompatActivity implements TeamTalkConnectionListener {
     private EditText file_path;
     private static final String lastMedia = "last_media_file";
     TeamTalkConnection mConnection;
-    TeamTalkService ttservice;
-    TeamTalkBase ttclient;
-    
+
+    TeamTalkService getService() {
+        return mConnection.getService();
+    }
+
+    TeamTalkBase getClient() {
+        return getService().getTTInstance();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+        mConnection = new TeamTalkConnection(this);
         setContentView(R.layout.activity_stream_media);
+        EdgeToEdgeHelper.enableEdgeToEdge(this);
+
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         file_path = this.findViewById(R.id.file_path_txt);
         file_path.setText(PreferenceManager.getDefaultSharedPreferences(getBaseContext()).getString(lastMedia, ""));
@@ -91,8 +99,6 @@ extends AppCompatActivity implements TeamTalkConnectionListener {
     @Override
     protected void onStart() {
         super.onStart();        
-        if (mConnection == null)
-            mConnection = new TeamTalkConnection(this);
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if(!bindService(intent, mConnection, Context.BIND_AUTO_CREATE))
@@ -104,7 +110,7 @@ extends AppCompatActivity implements TeamTalkConnectionListener {
     protected void onStop() {
         super.onStop();
         if(mConnection.isBound()) {
-            onServiceDisconnected(ttservice);
+            onServiceDisconnected(getService());
             unbindService(mConnection);
             mConnection.setBound(false);
         }
@@ -117,50 +123,42 @@ extends AppCompatActivity implements TeamTalkConnectionListener {
         Permissions granted = Permissions.onRequestResult(this, requestCode, grantResults);
         if (granted == null)
             return;
-        switch (granted) {
-            case READ_EXTERNAL_STORAGE:
-            case READ_MEDIA_VIDEO:
-            case READ_MEDIA_AUDIO:
-                if ((Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) || areMediaPermissionsComplete())
-                    mediaSelectionStart();
-                break;
-        default:
-            break;
+        if (granted == Permissions.READ_EXTERNAL_STORAGE ||
+            granted == Permissions.READ_MEDIA_VIDEO ||
+            granted == Permissions.READ_MEDIA_AUDIO) {
+            if ((Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) || areMediaPermissionsComplete())
+                mediaSelectionStart();
         }
     }
 
     @Override
     public void onServiceConnected(TeamTalkService service) {
-        ttservice = service;
-        ttclient = ttservice.getTTInstance();
         Button browse_btn = this.findViewById(R.id.media_file_select_btn);
         Button stream_btn = this.findViewById(R.id.media_file_stream_btn);
 
         OnClickListener listener = v -> {
-            switch(v.getId()) {
-                case R.id.media_file_select_btn :
+            int id = v.getId();
+            if (id == R.id.media_file_select_btn) {
                 if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) ?
                     requestMediaPermissions() :
                     Permissions.READ_EXTERNAL_STORAGE.request(this)) {
-                        mediaSelectionStart();
-                    }
-                    break;
-                case R.id.media_file_stream_btn :
-                    String path = file_path.getText().toString();
-                    if(path.isEmpty())
-                        return;
-                    VideoCodec videocodec = new VideoCodec();
-                    videocodec.nCodec = Codec.NO_CODEC;
-                    if (!ttclient.startStreamingMediaFileToChannel(path, videocodec)) {
-                        Toast.makeText(StreamMediaActivity.this,
-                        R.string.err_stream_media,
-                        Toast.LENGTH_LONG).show();
-                    } else {
-                        SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(getBaseContext()).edit();
-                        editor.putString(lastMedia, path).apply();
-                        finish();
-                    }
-                    break;
+                    mediaSelectionStart();
+                }
+            } else if (id == R.id.media_file_stream_btn) {
+                String path = file_path.getText().toString();
+                if(path.isEmpty())
+                    return;
+                VideoCodec videocodec = new VideoCodec();
+                videocodec.nCodec = Codec.NO_CODEC;
+                if (!getClient().startStreamingMediaFileToChannel(path, videocodec)) {
+                    Toast.makeText(StreamMediaActivity.this,
+                    R.string.err_stream_media,
+                    Toast.LENGTH_LONG).show();
+                } else {
+                    SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(getBaseContext()).edit();
+                    editor.putString(lastMedia, path).apply();
+                    finish();
+                }
             }
         };
 
@@ -193,9 +191,7 @@ extends AppCompatActivity implements TeamTalkConnectionListener {
     private boolean requestMediaPermissions() {
         boolean video = Permissions.READ_MEDIA_VIDEO.request(this);
         boolean audio = Permissions.READ_MEDIA_AUDIO.request(this);
-        return areMediaPermissionsComplete() ?
-            (video || audio) :
-            false;
+        return areMediaPermissionsComplete() && (video || audio);
     }
 
     private boolean areMediaPermissionsComplete() {

@@ -36,8 +36,8 @@ struct cipher_guard
 };
 
 template < typename PACKETTYPE, uint8_t PACKET_KIND_CRYPT, uint8_t PACKET_KIND_DECRYPTED >
-CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket(const PACKETTYPE& p, 
-                                                          const uint8_t* cryptkey)
+CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket(const PACKETTYPE& p,
+                                                          const std::array<uint8_t, CRYPTKEY_SIZE>& cryptkey)
                          : FieldPacket(p.GetHdrType(), PACKET_KIND_CRYPT, p.GetSrcUserID(), p.GetTime())
 {
     int buffers = 0;
@@ -58,9 +58,9 @@ CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket
 
     const EVP_CIPHER* cf = EVP_aes_256_cbc();
     int alloc_size = FIELDVALUE_PREFIX + data_len + 2 /*crc16*/ + EVP_CIPHER_block_size(cf);
-    char* field_buf;
-    ACE_NEW(field_buf, char[alloc_size]);
-    char* encrypt_buf = &field_buf[FIELDVALUE_PREFIX]; //make room for field-prefix
+    uint8_t* field_buf;
+    ACE_NEW(field_buf, uint8_t[alloc_size]);
+    uint8_t* encrypt_buf = &field_buf[FIELDVALUE_PREFIX]; //make room for field-prefix
 
     assert(alloc_size - FIELDVALUE_PREFIX >= data_len + 2 /*crc16*/ + EVP_CIPHER_block_size(cf));
 
@@ -68,8 +68,7 @@ CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket
     int encrypt_len = 0, tmpLen = 0;
     EVP_CIPHER_CTX* aesEncCtx = EVP_CIPHER_CTX_new();
     cipher_guard g(aesEncCtx);
-    EVP_CIPHER_CTX_init(aesEncCtx);
-    status = EVP_EncryptInit(aesEncCtx, cf, cryptkey, NULL);
+    status = EVP_EncryptInit(aesEncCtx, cf, cryptkey.data(), NULL);
     assert(status == 1);
     //status = EVP_CIPHER_CTX_set_padding(aesEncCtx, 0);
     //assert(status == 1);
@@ -113,18 +112,16 @@ CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket
     assert(status == 1);
     encrypt_len += tmpLen;
     assert(encrypt_len <= alloc_size - FIELDVALUE_PREFIX);
-    status = EVP_CIPHER_CTX_cleanup(aesEncCtx);
-    assert(status == 1);
 
     //MYTRACE(ACE_TEXT("Encrypted %d bytes with key crc 0x%08x, crypt data crc32 0x%08x\n"),
     //        encrypt_len, ACE::crc32(cryptkey, CRYPTKEY_SIZE), 
     //        ACE::crc32(encrypt_buf, encrypt_len));
 
-    char* ptr = field_buf;
-    WRITEFIELD_TYPE(field_buf, FIELDTYPE_CRYPTDATA, encrypt_len, ptr);
+    uint8_t* ptr = field_buf;
+    ptr = WRITEFIELD_TYPE(field_buf, FIELDTYPE_CRYPTDATA, encrypt_len);
 
     iovec v;
-    v.iov_base = field_buf;
+    v.iov_base = reinterpret_cast<char*>(field_buf);
     v.iov_len = FIELDVALUE_PREFIX + encrypt_len;
 
     m_iovec.push_back(v);
@@ -137,7 +134,7 @@ CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::CryptPacket
 }
 
 template < typename PACKETTYPE, uint8_t PACKET_KIND_CRYPT, uint8_t PACKET_KIND_DECRYPTED >
-std::unique_ptr< PACKETTYPE > CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::Decrypt(const uint8_t* decryptkey) const
+std::unique_ptr< PACKETTYPE > CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET_KIND_DECRYPTED >::Decrypt(const std::array<uint8_t, CRYPTKEY_SIZE>& decryptkey) const
 {
     const uint8_t* encrypt_ptr = FindField(FIELDTYPE_CRYPTDATA);
     if(!encrypt_ptr)
@@ -152,16 +149,15 @@ std::unique_ptr< PACKETTYPE > CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET
     //        ACE::crc32(encrypt_ptr, encrypt_len));
 
     const EVP_CIPHER* cf = EVP_aes_256_cbc();
-    char* decrypt_buf;
+    uint8_t* decrypt_buf;
     int alloc_size = encrypt_len + EVP_CIPHER_block_size(cf);
-    ACE_NEW_RETURN(decrypt_buf, char[alloc_size], NULL);
+    ACE_NEW_RETURN(decrypt_buf, uint8_t[alloc_size], NULL);
 
     int status = 0;
     int decrypt_len = 0, tmpLen = 0;
     EVP_CIPHER_CTX* aesDecCtx = EVP_CIPHER_CTX_new();
     cipher_guard g(aesDecCtx);
-    EVP_CIPHER_CTX_init(aesDecCtx);
-    status = EVP_DecryptInit(aesDecCtx, cf, decryptkey, NULL);
+    status = EVP_DecryptInit(aesDecCtx, cf, decryptkey.data(), NULL);
     assert(status == 1);
     //status = EVP_CIPHER_CTX_set_padding(aesDecCtx, 0);
     //assert(status == 1);
@@ -176,21 +172,20 @@ std::unique_ptr< PACKETTYPE > CryptPacket< PACKETTYPE, PACKET_KIND_CRYPT, PACKET
                               &tmpLen);
     decrypt_len += tmpLen;
     assert(decrypt_len <= alloc_size);
-    EVP_CIPHER_CTX_cleanup(aesDecCtx);
 
     //crc16 is last 2 bytes of decrypted data chunk
-    const char* ptr = decrypt_buf;
+    const uint8_t* ptr = decrypt_buf;
     ptr += decrypt_len - 2;
     uint32_t crc32 = ACE::crc32(decrypt_buf, decrypt_len - 2);
     uint16_t crc16 = crc32 & 0xFFFF;
-    if(get_uint16(ptr) != crc16)
+    if(GET_UINT16(ptr) != crc16)
     {
         MYTRACE(ACE_TEXT("Invalid CRC for packet %d from #%d\n"), PACKET_KIND_CRYPT, GetSrcUserID()); 
         delete [] decrypt_buf;
         return decrypt_pkt_t();
     }
     iovec v;
-    v.iov_base = decrypt_buf;
+    v.iov_base = reinterpret_cast<char*>(decrypt_buf);
     v.iov_len = decrypt_len - 2;
 
     decrypt_pkt_t p(new (std::nothrow) PACKETTYPE(PACKET_KIND_DECRYPTED, *this, v));

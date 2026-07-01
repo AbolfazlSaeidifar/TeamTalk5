@@ -19,12 +19,8 @@
 #define UTILTTS_H
 
 #include <QHash>
-#include <QString>
 #include <QObject>
-
-#if defined(ENABLE_TOLK)
-#include <Tolk.h>
-#endif
+#include <QString>
 
 enum TextToSpeechEvent : qulonglong
 {
@@ -95,7 +91,7 @@ enum TextToSpeechEngine
 {
     TTSENGINE_NONE = 0,
     TTSENGINE_QT = 1,
-    TTSENGINE_TOLK = 2,
+    TTSENGINE_PRISM = 2,
     TTSENGINE_NOTIFY_OBSOLETE = 3,
     TTSENGINE_QTANNOUNCEMENT = 4,
     TTSENGINE_APPLESCRIPT = 5,

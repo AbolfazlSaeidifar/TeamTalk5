@@ -23,6 +23,8 @@
 
 package dk.bearware.gui;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -56,21 +58,29 @@ public class ServerEntryActivity extends AppCompatActivity
         ClientEventListener.OnCmdMyselfLoggedInListener {
 
     private static final String TAG = "bearware";
-    private static final int DEFAULT_PORT = 10333;
     private static final int MIN_PORT = 1;
     private static final int MAX_PORT = 65535;
 
     private TeamTalkConnection mConnection;
-    private TeamTalkService ttservice;
-    private TeamTalkBase ttclient;
     private ServerEntry serverentry;
     private ActivityServerEntryBinding binding;
+
+    TeamTalkService getService() {
+        return mConnection.getService();
+    }
+
+    TeamTalkBase getClient() {
+        return getService().getTTInstance();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mConnection = new TeamTalkConnection(this);
         binding = ActivityServerEntryBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        EdgeToEdgeHelper.enableEdgeToEdge(this);
+
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         
         setupListeners();
@@ -85,6 +95,7 @@ public class ServerEntryActivity extends AppCompatActivity
         }
         else {
             binding.serverStatusSection.setVisibility(View.GONE);
+            hideJoinCode();
         }
     }
 
@@ -95,6 +106,13 @@ public class ServerEntryActivity extends AppCompatActivity
         
         binding.tcpPortEdit.addTextChangedListener(new PortTextWatcher(binding.tcpPortEdit));
         binding.udpPortEdit.addTextChangedListener(new PortTextWatcher(binding.udpPortEdit));
+
+        binding.copyJoincodeBtn.setOnClickListener(v -> {
+            String joincode = binding.joincodeEdit.getText().toString();
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("label", joincode);
+            clipboard.setPrimaryClip(clip);
+        });
     }
 
     private void setChannelViewsVisibility(boolean visible) {
@@ -105,61 +123,58 @@ public class ServerEntryActivity extends AppCompatActivity
         binding.channelPasswordLayout.setVisibility(visibility);
     }
 
-    private static class PortTextWatcher implements TextWatcher {
-        private final TextInputEditText editText;
+    private record PortTextWatcher(TextInputEditText editText) implements TextWatcher {
 
-        public PortTextWatcher(TextInputEditText editText) {
-            this.editText = editText;
+        @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
         }
 
-        @Override
-        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-        @Override
-        public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-        @Override
-        public void afterTextChanged(Editable s) {
-            String text = s.toString().trim();
-            if (text.isEmpty()) {
-                editText.setError(null);
-                return;
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
             }
-            
-            try {
-                int port = Integer.parseInt(text);
-                if (port < MIN_PORT || port > MAX_PORT) {
-                    editText.setError("Port must be between " + MIN_PORT + " and " + MAX_PORT);
-                } else {
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                String text = s.toString().trim();
+                if (text.isEmpty()) {
                     editText.setError(null);
+                    return;
                 }
-            } catch (NumberFormatException e) {
-                editText.setError("Invalid port number");
+
+                try {
+                    int port = Integer.parseInt(text);
+                    if (port < MIN_PORT || port > MAX_PORT) {
+                        editText.setError("Port must be between " + MIN_PORT + " and " + MAX_PORT);
+                    } else {
+                        editText.setError(null);
+                    }
+                } catch (NumberFormatException e) {
+                    editText.setError("Invalid port number");
+                }
             }
         }
-    }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (mConnection != null && mConnection.isBound()) {
+        if (mConnection.isBound()) {
             resetTeamTalkService();
-            ttservice.getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
+            getService().getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (mConnection != null && mConnection.isBound()) {
-            ttservice.getEventHandler().registerOnCmdMyselfLoggedIn(this, false);
+        if (mConnection.isBound()) {
+            getService().getEventHandler().registerOnCmdMyselfLoggedIn(this, false);
         }
     }
 
     private void resetTeamTalkService() {
-        ttservice.resetState();
-        ttclient.closeSoundInputDevice();
-        ttclient.closeSoundOutputDevice();
+        getService().resetState();
+        getClient().closeSoundInputDevice();
+        getClient().closeSoundOutputDevice();
     }
 
     @Override
@@ -189,9 +204,6 @@ public class ServerEntryActivity extends AppCompatActivity
     }
 
     private void bindToTeamTalkService() {
-        if (mConnection == null) {
-            mConnection = new TeamTalkConnection(this);
-        }
         if (!mConnection.isBound()) {
             Intent intent = new Intent(getApplicationContext(), TeamTalkService.class);
             if (!bindService(intent, mConnection, Context.BIND_AUTO_CREATE)) {
@@ -201,11 +213,9 @@ public class ServerEntryActivity extends AppCompatActivity
     }
 
     private void unbindFromTeamTalkService() {
-        if (mConnection != null && mConnection.isBound()) {
-            if (ttservice != null) {
-                ttservice.resetState();
-                onServiceDisconnected(ttservice);
-            }
+        if (mConnection.isBound()) {
+            getService().resetState();
+            onServiceDisconnected(getService());
             unbindService(mConnection);
             mConnection.setBound(false);
         }
@@ -219,27 +229,24 @@ public class ServerEntryActivity extends AppCompatActivity
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.action_connect:
-                connectToServer();
-                break;
-            case R.id.action_saveserver:
-                saveServerAndFinish();
-                break;
-            case android.R.id.home:
-                setResult(RESULT_CANCELED);
-                finish();
-                break;
-            default:
-                return super.onOptionsItemSelected(item);
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_connect) {
+            connectToServer();
+        } else if (itemId == R.id.action_saveserver) {
+            saveServerAndFinish();
+        } else if (itemId == android.R.id.home) {
+            setResult(RESULT_CANCELED);
+            finish();
+        } else {
+            return super.onOptionsItemSelected(item);
         }
         return true;
     }
 
     private void connectToServer() {
         serverentry = getServerEntry();
-        ttservice.setServerEntry(serverentry);
-        if (!ttservice.reconnect()) {
+        getService().setServerEntry(serverentry);
+        if (!getService().reconnect()) {
             Toast.makeText(this, R.string.err_connection, Toast.LENGTH_LONG).show();
         }
     }
@@ -270,14 +277,23 @@ public class ServerEntryActivity extends AppCompatActivity
     }
 
     private int parsePort(String portStr) {
+        int defaultPort = getDefaultPort();
         if (portStr.isEmpty()) {
-            return DEFAULT_PORT;
+            return defaultPort;
         }
         try {
             int port = Integer.parseInt(portStr);
-            return (port >= MIN_PORT && port <= MAX_PORT) ? port : DEFAULT_PORT;
+            return (port >= MIN_PORT && port <= MAX_PORT) ? port : defaultPort;
         } catch (NumberFormatException e) {
-            return DEFAULT_PORT;
+            return defaultPort;
+        }
+    }
+
+    private int getDefaultPort() {
+        try {
+            return Integer.parseInt(getString(R.string.default_port));
+        } catch (NumberFormatException e) {
+            return 10333; // Fallback value
         }
     }
 
@@ -292,6 +308,7 @@ public class ServerEntryActivity extends AppCompatActivity
         populateConnectionSettings(entry);
         populateAuthenticationSettings(entry);
         populateChannelSettings(entry);
+        populateJoinCodeSettings(entry);
     }
 
     private void populateServerInfo(ServerEntry entry) {
@@ -315,7 +332,7 @@ public class ServerEntryActivity extends AppCompatActivity
         }
         
         try {
-            Locale locale = new Locale("", countryCode.toUpperCase());
+            Locale locale = new Locale("", countryCode.toUpperCase(Locale.ROOT));
             String displayName = locale.getDisplayCountry();
             return displayName.isEmpty() ? countryCode : displayName;
         } catch (Exception e) {
@@ -347,6 +364,23 @@ public class ServerEntryActivity extends AppCompatActivity
         setChannelViewsVisibility(!entry.rememberLastChannel);
     }
 
+    private void populateJoinCodeSettings(ServerEntry entry) {
+        if (!entry.joincode.isEmpty()) {
+            binding.joincodeEdit.setText(entry.joincode);
+        }
+        else {
+            hideJoinCode();
+        }
+    }
+
+    private void hideJoinCode() {
+        binding.prefTitleJoincode.setVisibility(View.GONE);
+        binding.joincodeLayout.setVisibility(View.GONE);
+        binding.textJoincode.setVisibility(View.GONE);
+        binding.joincodeEdit.setVisibility(View.GONE);
+        binding.copyJoincodeBtn.setVisibility(View.GONE);
+    }
+
     private String formatServerInfo(int titleResId, String value) {
         return getString(titleResId) + ": " + value;
     }
@@ -373,8 +407,6 @@ public class ServerEntryActivity extends AppCompatActivity
     
     @Override
     public void onServiceConnected(TeamTalkService service) {
-        ttservice = service;
-        ttclient = service.getTTInstance();
         service.getEventHandler().registerOnCmdMyselfLoggedIn(this, true);
     }
 

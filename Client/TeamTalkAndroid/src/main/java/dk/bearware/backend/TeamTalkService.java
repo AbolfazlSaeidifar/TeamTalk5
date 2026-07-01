@@ -118,6 +118,7 @@ import static dk.bearware.gui.CmdComplete.CMD_COMPLETE_NONE;
 
 public class TeamTalkService extends Service
         implements BluetoothHeadsetHelper.HeadsetConnectionListener,
+        BluetoothHeadsetHelper.ScoAudioConnectionListener,
         ClientEventListener.OnConnectSuccessListener,
         ClientEventListener.OnConnectFailedListener,
         ClientEventListener.OnConnectionLostListener,
@@ -150,6 +151,8 @@ public class TeamTalkService extends Service
 
     private static final int UI_WIDGET_ID = 1;
     private static final String UI_CHANNEL_ID = "TeamtalkConnection";
+    /** Delay before re-connecting Bluetooth SCO after a phone call ends (system needs time to release SCO). */
+    private static final long BLUETOOTH_SCO_RECONNECT_DELAY_MS = 500;
 
     // Binder given to clients
     private final IBinder mBinder = new LocalBinder();
@@ -168,6 +171,7 @@ public class TeamTalkService extends Service
     private MediaSessionCompat mediaSession;
     Handler reconnectHandler = new Handler();
     Runnable reconnectTimer = this::reconnect;
+    private Runnable reconnectBluetoothScoAfterCall;
 
     TeamTalkBase ttclient;
     ServerEntry ttserver;
@@ -311,6 +315,7 @@ public class TeamTalkService extends Service
         createEventTimer();
 
         bluetoothHeadsetHelper = new BluetoothHeadsetHelper(this);
+        reconnectBluetoothScoAfterCall = this::reconnectBluetoothScoAfterCallRun;
 
         ComponentName receiver = new ComponentName(getPackageName(), MediaButtonEventReceiver.class.getName());
         //mediaSession = new MediaSessionCompat(this, "MediaService", receiver, null);
@@ -437,32 +442,38 @@ public class TeamTalkService extends Service
 
                 switch (state) {
                 case TelephonyManager.CALL_STATE_IDLE:
-                    if (voxSuspended)
-                        enableVoiceActivation(true);
-                    else if (txSuspended)
-                        enableVoiceTransmission(true);
-                    setMute(permanentMuteState);
-                    if ((myself != null) && ((myStatus & TeamTalkConstants.STATUSMODE_AWAY) == 0))
-                        ttclient.doChangeStatus(myself.nStatusMode & ~TeamTalkConstants.STATUSMODE_AWAY, myself.szStatusMsg);
-                    inPhoneCall = false;
+                    if (inPhoneCall) {
+                        if (voxSuspended)
+                            enableVoiceActivation(true);
+                        else if (txSuspended)
+                            enableVoiceTransmission(true);
+                        setMute(permanentMuteState);
+                        if ((myself != null) && ((myStatus & TeamTalkConstants.STATUSMODE_AWAY) == 0))
+                            ttclient.doChangeStatus(myself.nStatusMode & ~TeamTalkConstants.STATUSMODE_AWAY, myself.szStatusMsg);
+                        inPhoneCall = false;
+                        scheduleReconnectBluetoothScoAfterCall();
+                    }
                     break;
                 case TelephonyManager.CALL_STATE_RINGING:
-                    inPhoneCall = true;
-                    if (!isMute()) {
-                        ttclient.setSoundOutputMute(true);
-                        currentMuteState = true;
+                case TelephonyManager.CALL_STATE_OFFHOOK:
+                    if (!inPhoneCall) {
+                        inPhoneCall = true;
+                        if (!isMute()) {
+                            ttclient.setSoundOutputMute(true);
+                            currentMuteState = true;
+                        }
+                        if (isVoiceActivationEnabled()) {
+                            voxSuspended = true;
+                            enableVoiceActivation(false);
+                        }
+                        else if (isVoiceTransmissionEnabled()) {
+                            txSuspended = true;
+                            enableVoiceTransmission(false);
+                        }
+                        myStatus = myself.nStatusMode;
+                        if ((myStatus & TeamTalkConstants.STATUSMODE_AWAY) == 0)
+                            ttclient.doChangeStatus(myStatus | TeamTalkConstants.STATUSMODE_AWAY, myself.szStatusMsg);
                     }
-                    if (isVoiceActivationEnabled()) {
-                        voxSuspended = true;
-                        enableVoiceActivation(false);
-                    }
-                    else if (isVoiceTransmissionEnabled()) {
-                        txSuspended = true;
-                        enableVoiceTransmission(false);
-                    }
-                    myStatus = myself.nStatusMode;
-                    if ((myStatus & TeamTalkConstants.STATUSMODE_AWAY) == 0)
-                        ttclient.doChangeStatus(myStatus | TeamTalkConstants.STATUSMODE_AWAY, myself.szStatusMsg);
                     break;
                 default:
                     break;
@@ -497,12 +508,71 @@ public class TeamTalkService extends Service
             if (bluetoothHeadsetHelper.isHeadsetConnected())
                 bluetoothHeadsetHelper.scoAudioConnect();
             bluetoothHeadsetHelper.registerHeadsetConnectionListener(this);
+            bluetoothHeadsetHelper.registerScoAudioConnectionListener(this);
         }
     }
 
     public void unwatchBluetoothHeadset() {
+        reconnectHandler.removeCallbacks(reconnectBluetoothScoAfterCall);
+        bluetoothHeadsetHelper.unregisterScoAudioConnectionListener(this);
         bluetoothHeadsetHelper.unregisterHeadsetConnectionListener(this);
         bluetoothHeadsetHelper.stop();
+    }
+
+    /** After a phone call ends, Bluetooth returns to A2DP and SCO is released. Schedule re-connecting SCO
+     * so that the headset microphone works again when the user returns to TeamTalk. */
+    private void scheduleReconnectBluetoothScoAfterCall() {
+        reconnectHandler.removeCallbacks(reconnectBluetoothScoAfterCall);
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        if (!prefs.getBoolean(Preferences.PREF_SOUNDSYSTEM_BLUETOOTH_HEADSET, false))
+            return;
+        if (bluetoothHeadsetHelper == null || !bluetoothHeadsetHelper.isStarted())
+            return;
+        reconnectHandler.postDelayed(reconnectBluetoothScoAfterCall, BLUETOOTH_SCO_RECONNECT_DELAY_MS);
+    }
+
+    private void reconnectBluetoothScoAfterCallRun() {
+        if (bluetoothHeadsetHelper == null || !bluetoothHeadsetHelper.isStarted())
+            return;
+        if (bluetoothHeadsetHelper.isHeadsetConnected() && !bluetoothHeadsetHelper.isOnHeadsetSco())
+            bluetoothHeadsetHelper.scoAudioConnect();
+    }
+
+    /** When "use bluetooth headset microphone" is on and headset SCO is active, use VOICECOM
+     * so that input is routed to the Bluetooth headset mic. */
+	private int getPreferredSoundInputDeviceId() {
+		return shouldUseBluetoothVoiceCom()
+				? SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_VOICECOM
+				: SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_DEFAULT;
+	}
+
+	private boolean shouldUseBluetoothVoiceCom() {
+		if (bluetoothHeadsetHelper == null || !bluetoothHeadsetHelper.isStarted()) {
+			return false;
+		}
+
+		SharedPreferences prefs =
+				PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+
+		if (!prefs.getBoolean(Preferences.PREF_SOUNDSYSTEM_BLUETOOTH_HEADSET, false)) {
+			return false;
+		}
+
+		return bluetoothHeadsetHelper.isHeadsetConnected()
+				&& bluetoothHeadsetHelper.isOnHeadsetSco();
+	}
+
+    /** Re-initialize sound input with the preferred device (e.g. after SCO connect/disconnect). */
+    private void reinitSoundInputDevice() {
+        if (ttclient == null) return;
+        boolean tx = (ttclient.getFlags() & ClientFlag.CLIENT_TX_VOICE) != 0;
+        boolean vox = (ttclient.getFlags() & (ClientFlag.CLIENT_SNDINPUT_VOICEACTIVATED | ClientFlag.CLIENT_SNDINPUT_VOICEACTIVE)) != 0;
+        if (!tx && !vox) return;
+        ttclient.closeSoundInputDevice();
+        int indevid = getPreferredSoundInputDeviceId();
+        if (!ttclient.initSoundInputDevice(indevid)) return;
+        if (tx) ttclient.enableVoiceTransmission(true);
+        if (vox) ttclient.enableVoiceActivation(true);
     }
 
     private void setMyChannel(Channel chan) {
@@ -572,7 +642,7 @@ public class TeamTalkService extends Service
         if (enable) {
             txSuspended = false;
             voxSuspended = false;
-            int indevid = SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_DEFAULT;
+            int indevid = getPreferredSoundInputDeviceId();
             if (((ttclient.getFlags() & ClientFlag.CLIENT_SNDINPUT_READY) != 0) || ttclient.initSoundInputDevice(indevid))
                 ttclient.enableVoiceTransmission(true);
         }
@@ -587,7 +657,7 @@ public class TeamTalkService extends Service
         if (enable) {
             txSuspended = false;
             voxSuspended = false;
-            int indevid = SoundDeviceConstants.TT_SOUNDDEVICE_ID_OPENSLES_DEFAULT;
+            int indevid = getPreferredSoundInputDeviceId();
             if (((ttclient.getFlags() & ClientFlag.CLIENT_SNDINPUT_READY) != 0) || ttclient.initSoundInputDevice(indevid))
                 ttclient.enableVoiceActivation(true);
         }
@@ -680,21 +750,23 @@ public class TeamTalkService extends Service
     public int HISTORY_USER_MSG_MAX = 100;
 
     public Vector<MyTextMessage> getUserTextMsgs(int userid) {
-        Vector<MyTextMessage> msgs;
-        if(usertxtmsgs.get(userid) == null) {
-            msgs = new Vector<>();
+        Vector<MyTextMessage> msgs = usertxtmsgs.get(userid);
+        if (msgs == null) {
+            msgs = new Vector<MyTextMessage>();
             usertxtmsgs.put(userid, msgs);
         }
-        msgs = usertxtmsgs.get(userid);
-        if(msgs.size() > HISTORY_USER_MSG_MAX)
+        if (msgs.size() > HISTORY_USER_MSG_MAX)
             msgs.remove(0);
+
+        MyTextMessage.merge(msgs);
+
         return msgs;
     }
 
     public Vector<MyTextMessage> getChatLogTextMsgs() {
-        if(chatlogtxtmsgs.size()>HISTORY_CHATLOG_MSG_MAX)
+        if (chatlogtxtmsgs.size() > HISTORY_CHATLOG_MSG_MAX)
             chatlogtxtmsgs.remove(0);
-
+        MyTextMessage.merge(chatlogtxtmsgs);
         return chatlogtxtmsgs;
     }
 
@@ -875,22 +947,6 @@ public class TeamTalkService extends Service
 
             //update status bar widget
             displayNotification(true);
-
-            // check whether to switch to female icon and put status message per server
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
-            int statusmode = TeamTalkConstants.STATUSMODE_AVAILABLE;
-            String statusmsg = "";
-            User myself = users.get(ttclient.getMyUserID());
-            if (myself != null) {
-                statusmode = myself.nStatusMode;
-                statusmsg = ttserver.statusmsg;
-            }
-            if (TextUtils.isEmpty(statusmsg)) {
-                statusmsg = PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).getString(Preferences.PREF_GENERAL_STATUSMSG, "");
-            }
-            if (prefs.getBoolean(Preferences.PREF_GENERAL_GENDER, false))
-                statusmode |= TeamTalkConstants.STATUSMODE_FEMALE;
-            ttclient.doChangeStatus(statusmode, statusmsg);
         }
     }
 
@@ -924,6 +980,21 @@ public class TeamTalkService extends Service
         MyTextMessage msg = MyTextMessage.createLogMsg(MyTextMessage.MSGTYPE_LOG_INFO,
             getResources().getString(R.string.text_cmd_loggedin));
         getChatLogTextMsgs().add(msg);
+
+        // check whether to switch to female icon and put status message per server
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
+        int statusmode = TeamTalkConstants.STATUSMODE_AVAILABLE;
+        String statusmsg = ttserver.statusmsg;
+
+        if (TextUtils.isEmpty(statusmsg))
+        {
+            statusmsg = prefs.getString(Preferences.PREF_GENERAL_STATUSMSG, "");
+        }
+
+        if (prefs.getBoolean(Preferences.PREF_GENERAL_GENDER, false))
+            statusmode |= TeamTalkConstants.STATUSMODE_FEMALE;
+
+        ttclient.doChangeStatus(statusmode, statusmsg);
     }
 
     @Override
@@ -986,6 +1057,14 @@ public class TeamTalkService extends Service
 
     @Override
     public void onCmdUserUpdate(User user) {
+
+        User olduser = users.get(user.nUserID);
+
+        if (olduser != null) {
+            Utils.subscriptionLogChanged(getBaseContext(), olduser, user)
+                .ifPresent(text -> getChatLogTextMsgs().add(MyTextMessage.createLogMsg(MyTextMessage.MSGTYPE_LOG_INFO, text)));
+        }
+
         users.put(user.nUserID, user);
     }
 
@@ -1024,7 +1103,7 @@ public class TeamTalkService extends Service
         
         // set media file volume
         SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-        int mf_volume = pref.getInt(Preferences.PREF_SOUNDSYSTEM_MEDIAFILE_VOLUME, 100);
+        int mf_volume = pref.getInt(Preferences.PREF_SOUNDSYSTEM_MEDIAFILE_VOLUME, 50);
         mf_volume = Utils.refVolume(mf_volume);
         ttclient.setUserVolume(user.nUserID, StreamType.STREAMTYPE_MEDIAFILE_AUDIO, mf_volume);
         ttclient.pumpMessage(ClientEvent.CLIENTEVENT_USER_STATECHANGE, user.nUserID);
@@ -1088,19 +1167,19 @@ public class TeamTalkService extends Service
         MyTextMessage newmsg = new MyTextMessage(textmessage, 
                                                  user == null? "" : Utils.getDisplayName(getBaseContext(), user));
 
+        Vector<MyTextMessage> msgs = null;
         switch(textmessage.nMsgType) {
-            case TextMsgType.MSGTYPE_USER : {
-                getUserTextMsgs(textmessage.nFromUserID).add(newmsg);
+            case TextMsgType.MSGTYPE_USER :
+                msgs = getUserTextMsgs(textmessage.nFromUserID);
                 break;
-            }
-            case TextMsgType.MSGTYPE_BROADCAST : {
-                getChatLogTextMsgs().add(newmsg);
+            case TextMsgType.MSGTYPE_BROADCAST :
+            case TextMsgType.MSGTYPE_CHANNEL :
+                msgs = getChatLogTextMsgs();
                 break;
-            }
-            case TextMsgType.MSGTYPE_CHANNEL : {
-                getChatLogTextMsgs().add(newmsg);
-                break;
-            }
+        }
+        if (msgs != null) {
+            msgs.add(newmsg);
+            MyTextMessage.merge(msgs);
         }
     }
 
@@ -1111,6 +1190,14 @@ public class TeamTalkService extends Service
 
     @Override
     public void onCmdChannelUpdate(Channel channel) {
+
+        Channel oldchannel = channels.get(channel.nChannelID);
+
+        if (oldchannel != null && mychannel != null && mychannel.nChannelID == channel.nChannelID) {
+            Utils.transmitUsersLogChanged(getBaseContext(), oldchannel, channel, getUsers())
+                .ifPresent(text -> getChatLogTextMsgs().add(MyTextMessage.createLogMsg(MyTextMessage.MSGTYPE_LOG_INFO, text)));
+        }
+
         channels.put(channel.nChannelID, channel);
 
         if (mychannel != null && mychannel.nChannelID == channel.nChannelID) {
@@ -1193,6 +1280,16 @@ public class TeamTalkService extends Service
     @Override
     public void onHeadsetDisconnected() {
         bluetoothHeadsetHelper.scoAudioDisconnect();
+    }
+
+    @Override
+    public void onScoAudioConnected() {
+        reinitSoundInputDevice();
+    }
+
+    @Override
+    public void onScoAudioDisconnected() {
+        reinitSoundInputDevice();
     }
 
 

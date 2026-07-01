@@ -25,7 +25,7 @@
 #include <QStack>
 #include <QTemporaryFile>
 
-extern QSettings* ttSettings;
+extern NonDefaultSettings* ttSettings;
 extern TTInstance* ttInst;
 
 QString makeCustomCommand(const QString& cmd, const QString& value)
@@ -210,7 +210,7 @@ void deleteServerEntry(const HostEntry& host)
     int index = 0;
     while (getServerEntry(index, tmp, host.latesthost))
     {
-        if(tmp.name != host.name)
+        if (!tmp.sameHostEntry(host))
             hosts.push_back(tmp);
         ttSettings->remove(QString((host.latesthost ? SETTINGS_LATESTHOST_NAME : SETTINGS_SERVERENTRIES_NAME)).arg(index));
         ttSettings->remove(QString((host.latesthost ? SETTINGS_LATESTHOST_HOSTADDR : SETTINGS_SERVERENTRIES_HOSTADDR)).arg(index));

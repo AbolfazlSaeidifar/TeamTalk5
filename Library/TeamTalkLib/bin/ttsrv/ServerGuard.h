@@ -24,14 +24,15 @@
 #if !defined(SERVERGUARD_H)
 #define SERVERGUARD_H
 
-#include <teamtalk/server/ServerNode.h>
 #include "ServerXML.h"
 
-#if defined(ENABLE_HTTP_AUTH)
-#include <thread>
-#endif
+#include "teamtalk/Common.h"
+#include "teamtalk/Commands.h"
+#include "teamtalk/server/Server.h"
+#include "teamtalk/server/ServerNode.h"
 
-#include <mutex>
+#include <cstddef>
+#include <vector>
 
 namespace teamtalk {
 
@@ -64,9 +65,11 @@ namespace teamtalk {
         void OnBroadcastMessage(const ServerUser& from, const teamtalk::TextMessage& msg) override;
         void OnCustomMessage(const ServerUser& from, const ServerUser& to, const teamtalk::TextMessage& msg) override;
 
-        void OnChannelCreated(const ServerChannel& channel, const ServerUser* user = NULL) override;
-        void OnChannelUpdated(const ServerChannel& channel, const ServerUser* user = NULL) override;
-        void OnChannelRemoved(const ServerChannel& channel, const ServerUser* user = NULL) override;
+        void OnUserUpdateStream(const ServerUser& user, const ServerChannel& channel, StreamType stream, int streamid) override;
+
+        void OnChannelCreated(const ServerChannel& channel, const ServerUser* user = nullptr) override;
+        void OnChannelUpdated(const ServerChannel& channel, const ServerUser* user = nullptr) override;
+        void OnChannelRemoved(const ServerChannel& channel, const ServerUser* user = nullptr) override;
 
         void OnFileUploaded(const ServerUser& user, const ServerChannel& chan, const RemoteFile& file) override;
         void OnFileDownloaded(const ServerUser& user, const ServerChannel& chan, const RemoteFile& file) override;
@@ -106,5 +109,5 @@ namespace teamtalk {
 #endif
         teamtalk::ServerXML& m_settings;
     };
-}
+} // namespace teamtalk
 #endif

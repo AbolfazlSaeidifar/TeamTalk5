@@ -29,8 +29,10 @@ if (JNI_FOUND OR ${CMAKE_SYSTEM_NAME} MATCHES "Android")
 
     if (${CMAKE_SYSTEM_NAME} MATCHES "Android")
       link_directories (../../Library/TeamTalk_DLL/${CMAKE_ANDROID_ARCH_ABI})
+      set (JNI_INSTALL_DIR Library/TeamTalkJNI/libs/${CMAKE_ANDROID_ARCH_ABI})
     else()
       link_directories (../../Library/TeamTalk_DLL)
+      set (JNI_INSTALL_DIR Library/TeamTalkJNI/libs)
     endif()
 
     option (BUILD_TEAMTALK_LIBRARY_JNI "Build TeamTalk 5 JNI DLL for TeamTalk 5 Standard Edition" ON)
@@ -69,8 +71,7 @@ if (JNI_FOUND OR ${CMAKE_SYSTEM_NAME} MATCHES "Android")
         set_output_dir(TeamTalk5-jni "${CMAKE_CURRENT_SOURCE_DIR}/libs")
       endif()
 
-      install (TARGETS TeamTalk5-jni DESTINATION Library/TeamTalkJNI)
-      
+      install (TARGETS TeamTalk5-jni DESTINATION ${JNI_INSTALL_DIR})
     endif()
 
     if (BUILD_TEAMTALK_LIBRARY_JNIPRO)
@@ -98,7 +99,7 @@ if (JNI_FOUND OR ${CMAKE_SYSTEM_NAME} MATCHES "Android")
         set_output_dir(TeamTalk5Pro-jni "${CMAKE_CURRENT_SOURCE_DIR}/libs")
       endif()
 
-      install (TARGETS TeamTalk5Pro-jni DESTINATION Library/TeamTalkJNI)
+      install (TARGETS TeamTalk5Pro-jni DESTINATION ${JNI_INSTALL_DIR})
     endif()
 
 else()
@@ -202,7 +203,7 @@ if (Java_FOUND)
     src/dk/bearware/WindowsHelper.java)
 
   # Minimum source/target is Java 1.8 in Java 20
-  set(CMAKE_JAVA_COMPILE_FLAGS "-source" "1.8" "-target" "1.8")
+  set(CMAKE_JAVA_COMPILE_FLAGS "--release" "8")
 
   if (BUILD_TEAMTALK_LIBRARY_JAR)
     add_jar (TeamTalk5JAR
@@ -222,43 +223,74 @@ if (Java_FOUND)
 
   # JUnit tests
 
-  find_jar (junit NAMES junit4 junit
-            PATHS ENV JUNIT_HOME
-            DOC "Find JUnit")
+  find_jar (JUNIT-PLATFORM-CONSOLE-STANDALONE NAMES junit-platform-console-standalone
+    PATHS ENV JUNIT_HOME
+    DOC "Find JUnit Platform Console Standalone")
 
-  if (NOT junit)
-    message(WARNING "Cannot find JUnit jar. Skipping JUnit tests.")
+  if (NOT JUNIT-PLATFORM-CONSOLE-STANDALONE)
+      # JUnit 5 JAR URLs
+    set (JUNIT_PLATFORM_VERSION 1.9.3)
+
+    ExternalProject_Add(junit-platform-console-standalone-maven
+      URL                 https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_PLATFORM_VERSION}/junit-platform-console-standalone-${JUNIT_PLATFORM_VERSION}.jar
+      DOWNLOAD_NO_EXTRACT TRUE
+      DOWNLOAD_NAME       junit-platform-console-standalone.jar
+      UPDATE_COMMAND      ""
+      INSTALL_COMMAND     ""
+      BUILD_BYPRODUCTS    ${CMAKE_CURRENT_LIST_DIR}/libs/junit-platform-console-standalone.jar
+      INSTALL_DIR         ""
+      CONFIGURE_COMMAND   ""
+      BUILD_COMMAND       ${CMAKE_COMMAND} -E copy <DOWNLOAD_DIR>/junit-platform-console-standalone.jar ${CMAKE_CURRENT_LIST_DIR}/libs/junit-platform-console-standalone.jar
+      )
+    ExternalProject_Get_Property(junit-platform-console-standalone-maven BUILD_BYPRODUCTS)
+    set (JUNITJAR ${BUILD_BYPRODUCTS})
   else()
-
-    if (BUILD_TEAMTALK_LIBRARY_JAR)
-      add_jar (TeamTalk5Test INCLUDE_JARS TeamTalk5JAR ${junit}
-        ENTRY_POINT org/junit/runner/JUnitCore
-        SOURCES test/dk/bearware/TeamTalkTestCase.java
-        test/dk/bearware/TeamTalkTestCaseBase.java
-        test/dk/bearware/TeamTalkStdTestCase.java
-        test/TeamTalkStdTestSuite.java
-        test/SingleJUnitTestRunner.java
-        OUTPUT_DIR libs)
-    endif()
-
-    if (BUILD_TEAMTALK_LIBRARY_JARPRO)
-      add_jar (TeamTalk5ProTest INCLUDE_JARS TeamTalk5ProJAR ${junit}
-        ENTRY_POINT org/junit/runner/JUnitCore
-        SOURCES test/dk/bearware/TeamTalkTestCase.java
-        test/dk/bearware/TeamTalkTestCaseBase.java
-        test/dk/bearware/TeamTalkProTestCase.java
-        test/TeamTalkProTestSuite.java
-        test/SingleJUnitTestRunner.java
-        OUTPUT_DIR libs)
-
-      add_jar (TeamTalk5SrvTest INCLUDE_JARS TeamTalk5ProJAR ${junit}
-        ENTRY_POINT org/junit/runner/JUnitCore
-        SOURCES test/dk/bearware/TeamTalkTestCaseBase.java
-        test/dk/bearware/TeamTalkServerTestCase.java
-        test/TeamTalkServerTestSuite.java
-        test/SingleJUnitTestRunner.java
-        OUTPUT_DIR libs)
-    endif()
+    set (JUNITJAR ${JUNIT-PLATFORM-CONSOLE-STANDALONE})
   endif()
 
+  if (BUILD_TEAMTALK_LIBRARY_JAR)
+    add_jar (TeamTalk5Test INCLUDE_JARS TeamTalk5JAR ${JUNITJAR}
+      ENTRY_POINT org/junit/platform/console/ConsoleLauncher
+      SOURCES test/dk/bearware/TeamTalkTestCase.java
+      test/dk/bearware/TeamTalkTestCaseBase.java
+      test/dk/bearware/TeamTalkStdTestCase.java
+      test/dk/bearware/TestTimingExtension.java
+      test/TeamTalkStdTestSuite.java
+      test/SummaryTestExecutionListener.java
+      OUTPUT_DIR libs)
+    if (NOT JUNIT-PLATFORM-CONSOLE-STANDALONE)
+      add_dependencies (TeamTalk5Test junit-platform-console-standalone-maven)
+    endif()
+    install (FILES ${CMAKE_CURRENT_LIST_DIR}/libs/TeamTalk5Test.jar DESTINATION Library/TeamTalkJNI/libs)
+  endif()
+
+  if (BUILD_TEAMTALK_LIBRARY_JARPRO)
+    add_jar (TeamTalk5ProTest INCLUDE_JARS TeamTalk5ProJAR ${JUNITJAR}
+      ENTRY_POINT org/junit/platform/console/ConsoleLauncher
+      SOURCES test/dk/bearware/TeamTalkTestCase.java
+      test/dk/bearware/TeamTalkTestCaseBase.java
+      test/dk/bearware/TeamTalkProTestCase.java
+      test/dk/bearware/TestTimingExtension.java
+      test/TeamTalkProTestSuite.java
+      test/SummaryTestExecutionListener.java
+      OUTPUT_DIR libs)
+    if (NOT JUNIT-PLATFORM-CONSOLE-STANDALONE)
+      add_dependencies (TeamTalk5ProTest junit-platform-console-standalone-maven)
+    endif()
+    install (FILES ${CMAKE_CURRENT_LIST_DIR}/libs/TeamTalk5ProTest.jar DESTINATION Library/TeamTalkJNI/libs)
+
+    add_jar (TeamTalk5SrvTest INCLUDE_JARS TeamTalk5ProJAR ${JUNITJAR}
+      ENTRY_POINT org/junit/platform/console/ConsoleLauncher
+      SOURCES test/dk/bearware/TeamTalkTestCaseBase.java
+      test/dk/bearware/TeamTalkServerTestCase.java
+      test/dk/bearware/TestTimingExtension.java
+      test/TeamTalkServerTestSuite.java
+      test/SummaryTestExecutionListener.java
+      OUTPUT_DIR libs)
+    if (NOT JUNIT-PLATFORM-CONSOLE-STANDALONE)
+      add_dependencies (TeamTalk5SrvTest junit-platform-console-standalone-maven)
+    endif()
+    install (FILES ${CMAKE_CURRENT_LIST_DIR}/libs/TeamTalk5SrvTest.jar DESTINATION Library/TeamTalkJNI/libs)
+
+  endif(BUILD_TEAMTALK_LIBRARY_JARPRO)
 endif()

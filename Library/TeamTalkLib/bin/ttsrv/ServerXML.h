@@ -24,50 +24,56 @@
 #ifndef SERVERSETTINGS_H
 #define SERVERSETTINGS_H
 
-#include <settings/Settings.h>
-#include <teamtalk/Common.h>
+#include "settings/Settings.h"
+#include "teamtalk/Common.h"
 
-#define TEAMTALK_XML_VERSION                    "5.3"
+#include <cstdint>
+#include <ctime>
+#include <map>
+#include <string>
+#include <vector>
+
+constexpr auto TEAMTALK_XML_VERSION = "5.3";
 
 namespace teamtalk {
 
-    typedef std::map< int, ChannelProp > statchannels_t;
+    using statchannels_t = std::map< int, ChannelProp >;
 
     int GetRootChannelID(const statchannels_t& channels); //success > 0
     statchannels_t GetSubChannels(int nChannelID, const statchannels_t& channels);
     std::string GetChannelPath(int nChannelID, const statchannels_t& channels);
 
     std::string DateToString(time_t t);
-    time_t StringToDate(std::string date);
+    time_t StringToDate(const std::string& date);
 
     class ServerXML : public teamtalk::XMLDocument
     {
     public:
         ServerXML(const std::string& rootname);
-        virtual bool SaveFile();
+        bool SaveFile() override;
 
-        TiXmlElement* GetRootElement();
+        tinyxml2::XMLElement* GetRootElement() override;
 
         /***** <general> *****/
         std::string GetSystemID(const std::string& defwelcome);
         
-        bool SetServerName(std::string szServerName);
+        bool SetServerName(const std::string& szServerName);
         std::string GetServerName();
 
-        bool SetMessageOfTheDay(std::string szMsg);
+        bool SetMessageOfTheDay(const std::string& szMsg);
         std::string GetMessageOfTheDay();
 
-        bool SetBindIPs(std::vector<std::string> ips);
+        bool SetBindIPs(const std::vector<std::string>& ips);
         std::vector<std::string> GetBindIPs();
 
         bool SetHostTcpPort(int nHostTcpPort);
-        int GetHostTcpPort();
+        int GetHostTcpPort(int defaultValue = -1);
 
         bool SetHostUdpPort(int nUdpPort);
-        int GetHostUdpPort();
+        int GetHostUdpPort(int defaultValue = -1);
 
         bool SetMaxUsers(int nMax);
-        int GetMaxUsers();
+        int GetMaxUsers(int defaultValue = -1);
 
         bool SetVoiceLogging(bool enable);
         bool GetVoiceLogging();
@@ -90,10 +96,13 @@ namespace teamtalk {
         bool GetCertificateVerifyOnce(bool defvalue);
 
         void SetCertificateVerifyDepth(int depth);
-        bool GetCertificateVerifyDepth(int defvalue);
+        int GetCertificateVerifyDepth(int defvalue);
         
         bool SetAutoSave(bool enable);
         bool GetAutoSave();
+
+        bool SetUPnP(bool enable);
+        bool GetUPnP();
 
         bool SetMaxLoginAttempts(int nMax);
         int GetMaxLoginAttempts();
@@ -183,20 +192,20 @@ namespace teamtalk {
         /******** </bearware-weblogin> *********/
 
     protected:
-        bool UpdateFile();
+        bool UpdateFile() override;
     private:
         /**** Sections ****/
-        TiXmlElement* GetGeneralElement();
-        TiXmlElement* GetFileStorageElement();
-        TiXmlElement* GetLoggingElement();
-        TiXmlElement* GetBandwidthLimitElement();
-        TiXmlElement* GetServerBansElement();
-        TiXmlElement* GetUsersElement();
-        TiXmlElement* GetChannelElement(const std::string& chpath);
-        TiXmlElement* GetUser(const std::string& username);
-        bool GetUser(const TiXmlElement& userElement, UserAccount& user) const;
-        bool GetUserBan(const TiXmlElement& banElement, BannedUser& ban);
-        void NewUserBan(TiXmlElement& banElement, const BannedUser& ban);
+        tinyxml2::XMLElement* GetGeneralElement();
+        tinyxml2::XMLElement* GetFileStorageElement();
+        tinyxml2::XMLElement* GetLoggingElement();
+        tinyxml2::XMLElement* GetBandwidthLimitElement();
+        tinyxml2::XMLElement* GetServerBansElement();
+        tinyxml2::XMLElement* GetUsersElement();
+        tinyxml2::XMLElement* GetChannelElement(const std::string& chpath);
+        tinyxml2::XMLElement* GetUser(const std::string& username);
+        bool GetUser(const tinyxml2::XMLElement* userElement, UserAccount& user) const;
+        bool GetUserBan(const tinyxml2::XMLElement* banElement, BannedUser& ban);
+        void NewUserBan(tinyxml2::XMLElement* banElement, const BannedUser& ban);
     };
-}
+} // namespace teamtalk
 #endif

@@ -28,8 +28,7 @@
 	    android:orientation="horizontal" >
 
 	    <GridLayout
-	        android:id="@+id/gridstats"
-	        android:layout_width="wrap_content"
+            android:layout_width="wrap_content"
 	        android:layout_height="wrap_content"
 	        android:layout_centerVertical="true"
 	        android:layout_gravity="center_vertical"
@@ -68,8 +67,7 @@
 	    </GridLayout>
 
 	    <GridLayout
-	        android:id="@+id/volcontrols"
-	        android:layout_width="wrap_content"
+            android:layout_width="wrap_content"
 	        android:layout_height="wrap_content"
 	        android:layout_centerHorizontal="true"
 	        android:layout_centerVertical="true"
@@ -107,7 +105,7 @@
 	        <!-- Row 3 -->
 
 	        <TextView
-	            android:id="@+id/mikelevel_text"
+	            android:id="@+id/miclevel_text"
 	            android:layout_column="0"
 	            android:layout_row="3"
 	            android:text=""
@@ -131,7 +129,7 @@
 	            android:layout_gravity="center"
 	            android:layout_row="5"
 	            android:contentDescription="@string/voice_activation_on"
-	            android:src="@drawable/mike_green" />
+	            android:src="@drawable/mic_green" />
 
 	    </GridLayout>
 	    

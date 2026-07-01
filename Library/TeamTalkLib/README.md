@@ -9,14 +9,14 @@ The following secions explain how to build TeamTalk binaries using CMake:
 * [Install TeamTalk Toolchain Dependencies](#install-teamTalk-toolchain-dependencies)
   * Install the tools required to build TeamTalk on the host build platform:
     * [Windows](#install-teamtalk-dependencies-on-windows)
-    * [Ubuntu 22](#install-teamtalk-dependencies-on-ubuntu-22)
+    * [Ubuntu 26](#install-teamtalk-dependencies-on-ubuntu-26)
     * [Android on Ubuntu 22](#install-teamtalk-dependencies-for-android-on-ubuntu-22)
     * [macOS](#install-teamtalk-dependencies-on-macos)
     * [iOS on macOS](#install-teamtalk-dependencies-for-ios-on-macos)
 * [Build TeamTalk Binaries](#build-teamTalk-binaries)
   * Invoke CMake to start building the TeamTalk binaries on the host build platform:
     * [Windows](#build-teamtalk-binaries-for-windows)
-    * [Ubuntu 22](#build-teamtalk-binaries-for-ubuntu-22)
+    * [Ubuntu 26](#build-teamtalk-binaries-for-ubuntu-26)
     * [Android on Ubuntu 22](#build-teamtalk-binaries-for-android-on-ubuntu-22)
     * [macOS](#build-teamtalk-binaries-for-macos)
     * [iOS on macOS](#build-teamtalk-binaries-for-ios-on-macos)
@@ -49,26 +49,32 @@ manually.
   [Strawberry Perl](https://strawberryperl.com/) on Windows
   * Place `perl.exe` in environment variable %PATH%.
     * OpenSSL and ACE Framework uses Perl
-* Install [Cygwin](https://www.cygwin.com) in `C:/cygwin64`
-  * LibVPX requires *cygwin*
-* Download [yasm](http://yasm.tortall.net)
-    * Place `yasm.exe` for x64 in `C:/tt5dist/yasm/x64`
-    * Place `yasm.exe` for Win32 in `C:/tt5dist/yasm/win32`
-    * LibVPX requires *yasm*
+* Install [MSYS2](https://www.msys2.org/) in `C:/MSYS64` (recommended)
+  * Run `pacman -S base-devel pkg-config` to install build tools
+  * FFmpeg and LibVPX requires *MSYS2* or *Cygwin*
+* Alternatively, install [Cygwin](https://www.cygwin.com/) in `C:/cygwin64`
+  * Install `make` package during Cygwin setup
+  * Cygwin is supported but MSYS2 is preferred
+* Install [NASM](https://www.nasm.us)
+    * Install to default location (`C:/Program Files/NASM`) or add to PATH
+    * LibVPX requires *NASM*
+    * NASM will be auto-downloaded if not found during CMake configuration
+* Install Windows 11 SDK (10.0.26100.0). This can be installed from
+  Visual Studio Installer.
 
 ### Install TeamTalk Dependencies on Ubuntu
 
-A Makefile is available for Ubuntu 22 and 24 to install all the dependencies
-required to build TeamTalk binaries.
-
-* To install build dependencies for Ubuntu 22 run the following in
-  TEAMTALK_ROOT:
-  * `sudo make -C Build depend-ubuntu22`
-    * `sudo` is required because `apt install` is called.
+A Makefile is available for Ubuntu 24 and 26 to install all the
+dependencies required to build TeamTalk binaries.
 
 * To install build dependencies for Ubuntu 24 run the following in
   TEAMTALK_ROOT:
   * `sudo make -C Build depend-ubuntu24`
+    * `sudo` is required because `apt install` is called.
+
+* To install build dependencies for Ubuntu 26 run the following in
+  TEAMTALK_ROOT:
+  * `sudo make -C Build depend-ubuntu26`
     * `sudo` is required because `apt install` is called.
 
 ### Install TeamTalk Dependencies for Android on Ubuntu 24
@@ -79,7 +85,7 @@ Building for Android platform is supported on Ubuntu 24.
   following in TEAMTALK_ROOT:
   * `sudo make -C Build depend-ubuntu24-android`
     * `sudo` is required because `apt install` is called.
-* Download [Android NDK r28c](https://developer.android.com/ndk) and
+* Download [Android NDK r29](https://developer.android.com/ndk) and
   unzip it. Make environment variable `ANDROID_NDK_HOME` point to the
   unzipped location.
 
@@ -110,17 +116,17 @@ there's different ways of doing this.
 ### Build TeamTalk Binaries for Windows
 
 Building TeamTalk for Windows is supported by
-[Visual Studio 2022](https://visualstudio.microsoft.com).
+[Visual Studio 2026](https://visualstudio.microsoft.com).
 
-To build TeamTalk for Windows first start *x86 Native Tools Command
-Prompt for VS 2022*. Use Git to clone
+To build TeamTalk for Windows first start *x64 Native Tools Command
+Prompt for VS*. Use Git to clone
 [TeamTalk5](https://github.com/BearWare/TeamTalk5) repository into
 `C:\TeamTalk5`.
 
 Use CMake to generate a valid build configuration in `C:\builddir`
 that will install binaries into `C:\installdir`:
 
-`cmake -DCMAKE_INSTALL_PREFIX=C:/installdir -S C:/TeamTalk5 -B C:/builddir -A Win32`
+`cmake -DCMAKE_INSTALL_PREFIX=C:/installdir -S C:/TeamTalk5 -B C:/builddir -A x64`
 
 Given that CMake managed to create a valid build configuration now
 start the build process:
@@ -128,23 +134,26 @@ start the build process:
 `cmake --build C:/builddir --config Release --target install`
 
 To get a Visual Studio solution file for building TeamTalk from Visual
-Studio 2022 run CMake like this:
+Studio 2026 run CMake like this:
 
-`cmake -G "Visual Studio 17 2022" -S C:/TeamTalk5 -B C:/builddir -A Win32`
+`cmake -G "Visual Studio 18 2026" -S C:/TeamTalk5 -B C:/builddir -A x64`
 
 Note that WebRTC dependency will create a folder in `C:\webrtc` where
 it downloads its repository.
 
-### Build TeamTalk Binaries for Ubuntu 22
+When both `FEATURE_FFMPEG` and `FEATURE_MEDIAFOUNDATION` are enabled,
+FFmpeg is tried first and Media Foundation is used as fallback.
+
+### Build TeamTalk Binaries for Ubuntu 26
 
 Run the following command in TEAMTALK_ROOT:
 
-`make -C Build ubuntu22`
+`make -C Build ubuntu26`
 
 This will cause `make` to call CMake to generate a valid build
 configuration and afterwards build the binaries.
 
-### Build TeamTalk Binaries for Android on Ubuntu 22
+### Build TeamTalk Binaries for Android on Ubuntu 24
 
 Run the following command in TEAMTALK_ROOT:
 
@@ -207,9 +216,13 @@ The following toolchain toggles are available:
     * `OFF` is only supported on Linux distributions
   * Build ACE on Windows requires *ActivePerl* or *Strawberry Perl*
     * Place `perl.exe` in %PATH%.
-* `TOOLCHAIN_TINYXML`
-  * When `ON` builds [TinyXML](https://github.com/aughey/tinyxml)
-  * When `OFF` uses TinyXML installed on host
+* `TOOLCHAIN_MINIUPNPC`
+  * When `ON` builds [miniupnpc](https://github.com/miniupnp/miniupnp)
+  * When `OFF` uses miniupnpc installed on host
+    * `OFF` is only supported on Linux distributions
+* `TOOLCHAIN_TINYXML2`
+  * When `ON` builds [TinyXML2](https://github.com/leethomason/tinyxml2)
+  * When `OFF` uses TinyXML2 installed on host
     * `OFF` is only supported on Linux distributions
 * `TOOLCHAIN_ZLIB`
   * When `ON` builds [ZLib](https://github.com/madler/zlib)
@@ -223,11 +236,12 @@ The following toolchain toggles are available:
   * When `ON` enables [LibVPX](https://github.com/webmproject/libvpx)
   * When `OFF` uses LibVPX installed on host
     * `OFF` is only supported on Linux distributions
-  * Building LibVPX on Windows requires Cygwin, https://www.cygwin.com/
-    * Install Cygwin in `C:/cygwin64`
-  * Building LibVPX on Windows requires yasm, http://yasm.tortall.net/
-    * Place `yasm.exe` for x64 in `C:/tt5dist/yasm/x64`
-    * Place `yasm.exe` for Win32 in `C:/tt5dist/yasm/win32`
+  * Building LibVPX on Windows requires MSYS2 or Cygwin
+    * MSYS2 (recommended): Install in `C:/MSYS64` and run `pacman -S base-devel`
+    * Cygwin (alternative): Install in `C:/cygwin64` with `make` package
+  * Building LibVPX on Windows requires NASM, https://www.nasm.us/
+    * Install to default location (`C:/Program Files/NASM`) or add to PATH
+    * NASM will be auto-downloaded if not found
 * `TOOLCHAIN_FFMPEG`
   * When `ON` builds [FFmpeg](https://github.com/FFmpeg/FFmpeg)
   * When `OFF` uses FFmpeg installed on host.
@@ -280,8 +294,10 @@ The following feature toggles are available:
   * Toolchain mapping: `TOOLCHAIN_SPEEXDSP`
 * `FEATURE_FFMPEG`
   * FFmpeg for streaming and audio resampling
-  * Supported platforms: macOS, iOS, Android, Ubuntu/Linux, Raspbian
+  * Supported platforms: macOS, iOS, Android, Ubuntu/Linux, Raspbian, Windows
   * Toolchain mapping: `TOOLCHAIN_FFMPEG`
+  * Building FFmpeg on Windows requires MSYS2
+    * Install in `C:/MSYS64` and run `pacman -S base-devel`
 * `FEATURE_V4L2`
   * Video for Linux 2 for video capture support
   * Supported platforms: Ubuntu/Linux, Raspbian

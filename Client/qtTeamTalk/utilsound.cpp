@@ -32,7 +32,7 @@
 #endif /* QT_VERSION_CHECK */
 #endif /* QT_MULTIMEDIA_LIB */
 
-extern QSettings* ttSettings;
+extern NonDefaultSettings* ttSettings;
 extern TTInstance* ttInst;
 extern PlaySoundEvent* playsoundevent;
 
@@ -113,7 +113,7 @@ bool getSoundDevice(const QString& devid, bool input, const QVector<SoundDevice>
 
     for (auto d : devs)
     {
-        if ( _Q(d.szDeviceID) == devid && ((input && d.nMaxInputChannels > 0) || (!input && d.nMaxOutputChannels > 0)))
+        if (getSoundDeviceUID(d) == devid && ((input && d.nMaxInputChannels > 0) || (!input && d.nMaxOutputChannels > 0)))
         {
             dev = d;
             return true;
@@ -122,9 +122,20 @@ bool getSoundDevice(const QString& devid, bool input, const QVector<SoundDevice>
     return false;
 }
 
+QString getSoundDeviceUID(const SoundDevice& dev)
+{
+    // Some sound backends (notably ALSA-on-PipeWire) report an empty
+    // szDeviceID, in which case fall back to the human-readable
+    // szDeviceName so that user-selected devices can still be re-resolved
+    // across launches.
+    if (!_Q(dev.szDeviceID).isEmpty())
+        return _Q(dev.szDeviceID);
+    return _Q(dev.szDeviceName);
+}
+
 int getSoundDuplexSampleRate(const SoundDevice& indev, const SoundDevice& outdev)
 {
-    auto isend = indev.inputSampleRates + sizeof(indev.inputSampleRates);
+    auto isend = indev.inputSampleRates + (sizeof(indev.inputSampleRates) / sizeof(indev.inputSampleRates[0]));
     auto isr = std::find_if(indev.inputSampleRates, isend,
         [outdev](int sr) { return sr == outdev.nDefaultSampleRate; });
     bool duplexmode = (indev.uSoundDeviceFeatures & SOUNDDEVICEFEATURE_DUPLEXMODE) &&
@@ -314,7 +325,7 @@ QStringList initSoundDevices(const SoundDevice& indev, const SoundDevice& outdev
     // disable WebRTC echo cancel if duplex mode is disabled
     if (preprocess.nPreprocessor == WEBRTC_AUDIOPREPROCESSOR)
     {
-        preprocess.webrtc.echocanceller.bEnable &= duplex;
+        preprocess.webrtc.echocanceller.bEnable = preprocess.webrtc.echocanceller.bEnable && duplex;
     }
 
     TT_SetSoundInputPreprocessEx(ttInst, &preprocess);
@@ -676,10 +687,10 @@ void resetDefaultSoundsPack()
         const SoundEventInfo& eventInfo = it.value();
         QString paramKey = eventInfo.settingKey;
         QString defaultValue = UtilSound::getDefaultFile(paramKey);
-        ttSettings->setValue(paramKey, defaultValue);
+        ttSettings->remove(paramKey);
     }
 
-    ttSettings->setValue(SETTINGS_SOUNDS_PACK, SETTINGS_SOUNDS_PACK_DEFAULT);
+    ttSettings->remove(SETTINGS_SOUNDS_PACK);
 }
 
 QString UtilSound::getDefaultFile(const QString& paramKey)

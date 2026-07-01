@@ -24,7 +24,7 @@
 #if !defined(SERVERMONITOR_H)
 #define SERVERMONITOR_H
 
-#include <teamtalk/server/ServerNode.h>
+#include "teamtalk/server/ServerNode.h"
 
 #include "TeamTalkSrv.h"
 
@@ -75,6 +75,10 @@ public:
     void OnCustomMessage(const teamtalk::ServerUser& from,
                          const teamtalk::ServerUser& to,
                          const teamtalk::TextMessage& msg) override;
+
+    void OnUserUpdateStream(const teamtalk::ServerUser& user,
+                            const teamtalk::ServerChannel& channel,
+                            teamtalk::StreamType stream, int streamid) override;
 
     void OnChannelCreated(const teamtalk::ServerChannel& channel,
                           const teamtalk::ServerUser* user = NULL) override;

@@ -9,22 +9,28 @@ include(ExternalProject)
 set (TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP ${TOOLCHAIN_INSTALL_PREFIX}/speexdsp)
 
 if (MSVC)
+
+  if (NOT CMAKE_VS_PLATFORM_NAME)
+    if (${CMAKE_SIZEOF_VOID_P} EQUAL 8)
+      set (CMAKE_VS_PLATFORM_NAME x64)
+    else()
+      set (CMAKE_VS_PLATFORM_NAME win32)
+    endif()
+  endif()
+
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     if (${CMAKE_SIZEOF_VOID_P} EQUAL 8)
 
-      if (NOT CMAKE_VS_PLATFORM_NAME)
-        set (CMAKE_VS_PLATFORM_NAME x64)
-      endif()
-
       ExternalProject_Add(speexdsp-src
-        GIT_REPOSITORY    https://github.com/bear101/speexdsp.git
-        GIT_TAG           2907b00
+        GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
+        GIT_TAG           SpeexDSP-1.2.1
         UPDATE_COMMAND    ""
+        PATCH_COMMAND     git apply ${CMAKE_CURRENT_LIST_DIR}/0001-Add-VS-2026-project.patch
         PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
         CONFIGURE_COMMAND ""
         BUILD_IN_SOURCE   TRUE
-        BUILD_COMMAND     msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=x64 win32\\VS2015\\libspeexdsp.sln -target:libspeexdsp /property:Configuration=Debug
-        COMMAND           msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=x64 win32\\VS2015\\libspeexdsp.sln -target:libspeexdsp /property:Configuration=Release_SSE
+        BUILD_COMMAND     msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=x64 win32\\VS2026\\libspeexdsp\\libspeexdsp.vcxproj /property:Configuration=Debug
+        COMMAND           msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=x64 win32\\VS2026\\libspeexdsp\\libspeexdsp.vcxproj /property:Configuration=Release_Static_SSE
         INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
         INSTALL_COMMAND   cd <SOURCE_DIR>/include
         COMMAND           ${CMAKE_CURRENT_LIST_DIR}\\..\\install_headers.bat <INSTALL_DIR>
@@ -36,19 +42,16 @@ if (MSVC)
       ExternalProject_Get_Property(speexdsp-src INSTALL_DIR)
     else()
 
-      if (NOT CMAKE_VS_PLATFORM_NAME)
-        set (CMAKE_VS_PLATFORM_NAME win32)
-      endif()
-
       ExternalProject_Add(speexdsp-src
-        GIT_REPOSITORY    https://github.com/bear101/speexdsp.git
-        GIT_TAG           2907b00
+        GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
+        GIT_TAG           SpeexDSP-1.2.1
         UPDATE_COMMAND    ""
+        PATCH_COMMAND     git apply ${CMAKE_CURRENT_LIST_DIR}/0001-Add-VS-2026-project.patch
         PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
         CONFIGURE_COMMAND ""
         BUILD_IN_SOURCE   TRUE
-        BUILD_COMMAND     msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=win32 win32\\VS2015\\libspeexdsp.sln -target:libspeexdsp /property:Configuration=Debug
-        COMMAND           msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=win32 win32\\VS2015\\libspeexdsp.sln -target:libspeexdsp /property:Configuration=Release_SSE
+        BUILD_COMMAND     msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=win32 win32\\VS2026\\libspeexdsp\\libspeexdsp.vcxproj /property:Configuration=Debug
+        COMMAND           msbuild -maxCpuCount ${PLATFORMTOOLSET} /p:Platform=win32 win32\\VS2026\\libspeexdsp\\libspeexdsp.vcxproj /property:Configuration=Release_Static_SSE
         INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
         INSTALL_COMMAND   cd <SOURCE_DIR>/include
         COMMAND           ${CMAKE_CURRENT_LIST_DIR}\\..\\install_headers.bat <INSTALL_DIR>
@@ -78,7 +81,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(speexdsp-src
       GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
-      GIT_TAG           SpeexDSP-1.2.0
+      GIT_TAG           SpeexDSP-1.2.1
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
@@ -123,7 +126,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(speexdsp-src
       GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
-      GIT_TAG           SpeexDSP-1.2.0
+      GIT_TAG           SpeexDSP-1.2.1
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
@@ -152,7 +155,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(speexdsp-src
       GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
-      GIT_TAG           SpeexDSP-1.2.0
+      GIT_TAG           SpeexDSP-1.2.1
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
@@ -207,7 +210,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Android")
   if (TOOLCHAIN_BUILD_EXTERNALPROJECTS)
     ExternalProject_Add(speexdsp-src
       GIT_REPOSITORY    https://github.com/xiph/speexdsp.git
-      GIT_TAG           SpeexDSP-1.2.0
+      GIT_TAG           SpeexDSP-1.2.1
       UPDATE_COMMAND    ""
       PREFIX            ${TOOLCHAIN_BUILD_PREFIX}/speexdsp
       INSTALL_DIR       ${TOOLCHAIN_INSTALL_PREFIX_SPEEXDSP}
